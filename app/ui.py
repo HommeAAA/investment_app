@@ -1115,59 +1115,42 @@ def render_share_page(ctx: AppContext, current_user: str) -> None:
 def render_add_page(ctx: AppContext, current_user: str) -> None:
     st.subheader("➕ 添加投资")
 
-    investor_options = ctx.portfolio.list_investor_options(current_user, owner_only=True)
+    with st.form("add_investment_form", clear_on_submit=False):
+        investor_options = ctx.portfolio.list_investor_options(current_user, owner_only=True)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        investor = st.selectbox("投资人", investor_options)
-        if investor == "新增投资人":
-            investor = st.text_input("新投资人", value=current_user).strip() or current_user
-        symbol_query = st.text_input("标的代码（支持模糊查询）").strip().upper()
+        c1, c2 = st.columns(2)
+        with c1:
+            investor = st.selectbox("投资人", investor_options)
+            if investor == "新增投资人":
+                investor = st.text_input("新投资人", value=current_user).strip() or current_user
+            symbol_query = st.text_input("标的代码", placeholder="输入代码或名称搜索...").strip().upper()
 
-        selected_name = ""
-        selected_market = ""
-        selected_code = symbol_query
-        if symbol_query:
-            candidates = ctx.portfolio.search_symbol_options(symbol_query, limit=20)
-            if candidates:
-                labels = ["保持手动输入"] + [
-                    f"{x['symbol_code']} | {x['symbol_name']} | {x['market']}" for x in candidates
-                ]
-                pick = st.selectbox("匹配结果", labels)
-                if pick != "保持手动输入":
-                    idx = labels.index(pick) - 1
-                    selected = candidates[idx]
-                    selected_code = selected["symbol_code"]
-                    selected_name = selected["symbol_name"]
-                    selected_market = selected["market"]
-                    st.caption(f"已选：{selected_name}（{selected_market}）")
+        with c2:
+            channel = st.text_input("渠道")
+            cost_price = st.number_input("成本价", min_value=0.0, step=0.01, format="%.2f")
+            quantity = st.number_input("数量", min_value=0.0, step=0.01)
 
-    with c2:
-        channel = st.text_input("渠道")
-        inferred_market = selected_market or ctx.market.identify_market(selected_code)
-        is_fund = inferred_market == "A股" and selected_code.isdigit() and len(selected_code) == 6
-        cost_price = st.number_input(
-            "成本价",
-            min_value=0.0,
-            step=0.0001 if is_fund else 0.01,
-            format="%.4f" if is_fund else "%.2f",
-        )
-        quantity = st.number_input("数量", min_value=0.0)
+        submitted = st.form_submit_button("提交", type="primary")
 
-    if st.button("提交", type="primary"):
-        result = ctx.portfolio.add_investment(
-            current_user,
-            investor,
-            selected_code,
-            channel,
-            cost_price,
-            quantity,
-        )
-        if result.ok:
-            st.success("添加成功")
-            st.rerun()
+    if submitted:
+        if not symbol_query:
+            st.error("请输入标的代码")
+        elif quantity <= 0:
+            st.error("数量必须大于0")
         else:
-            st.error(result.message)
+            result = ctx.portfolio.add_investment(
+                current_user,
+                investor,
+                symbol_query,
+                channel,
+                cost_price,
+                quantity,
+            )
+            if result.ok:
+                st.success("添加成功")
+                st.rerun()
+            else:
+                st.error(result.message)
 
     st.divider()
     st.subheader("🧑‍💼 投资人管理")
@@ -1188,7 +1171,26 @@ def render_portfolio_page(ctx: AppContext, current_user: str) -> None:
     st.subheader("📊 资产面板")
 
     valuation_mode = st.selectbox("计价方式", ["原币种", "人民币 (CNY)", "美元 (USD)"])
-    rows = ctx.portfolio.accessible_view_rows(current_user)
+    
+    cache_key = f"portfolio_cache_{current_user}"
+    cache_time_key = f"portfolio_cache_time_{current_user}"
+    
+    import time
+    current_time = time.time()
+    cache_age = current_time - st.session_state.get(cache_time_key, 0)
+    
+    if cache_key not in st.session_state or cache_age > 60:
+        with st.spinner("正在获取最新数据..."):
+            rows = ctx.portfolio.accessible_view_rows(current_user)
+            st.session_state[cache_key] = rows
+            st.session_state[cache_time_key] = current_time
+    else:
+        rows = st.session_state[cache_key]
+    
+    if st.button("🔄 刷新数据", type="secondary"):
+        st.session_state[cache_key] = None
+        st.rerun()
+    
     if not rows:
         st.info("暂无数据")
         return
@@ -1205,54 +1207,93 @@ def render_portfolio_page(ctx: AppContext, current_user: str) -> None:
         c4.metric("总收益率", f"{group['total_yield']}%")
 
     st.subheader("📋 投资明细")
-    investor_options = ctx.portfolio.list_investor_options(current_user, owner_only=True)
+    
+    df_data = []
     for row in rows:
         can_edit = ctx.shares.can_edit(row.owner_username, current_user)
-        owner_tip = "可编辑" if can_edit else "只读"
-        with st.expander(f"{row.investor} - {row.symbol_name} ({row.symbol_code})"):
-            st.caption(f"归属：{row.owner_username} · {owner_tip}")
-            col1, col2, col3, col4, col5 = st.columns([1.3, 1, 1, 0.8, 0.8])
-            selected_investor = col1.selectbox(
+        df_data.append({
+            "ID": row.id,
+            "投资人": row.investor,
+            "代码": row.symbol_code,
+            "名称": row.symbol_name,
+            "市场": row.market,
+            "成本价": row.cost_price,
+            "数量": row.quantity,
+            "现价": row.current_price,
+            "市值": row.current_market_value,
+            "收益": row.profit,
+            "收益率": f"{row.yield_pct}%",
+            "归属": row.owner_username,
+            "可编辑": "✓" if can_edit else "✗",
+        })
+    
+    if df_data:
+        import pandas as pd
+        df = pd.DataFrame(df_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    
+    st.subheader("编辑记录")
+    investor_options = ctx.portfolio.list_investor_options(current_user, owner_only=True)
+    
+    editable_rows = [r for r in rows if ctx.shares.can_edit(r.owner_username, current_user)]
+    if not editable_rows:
+        st.info("没有可编辑的记录")
+        return
+    
+    edit_options = [f"{r.symbol_code} - {r.symbol_name} ({r.investor})" for r in editable_rows]
+    selected_idx = st.selectbox("选择要编辑的记录", range(len(edit_options)), format_func=lambda i: edit_options[i])
+    row = editable_rows[selected_idx]
+    
+    with st.form(f"edit_form_{row.id}"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            edit_investor = st.selectbox(
                 "投资人",
                 investor_options,
                 index=investor_options.index(row.investor) if row.investor in investor_options else 0,
-                key=f"investor_{row.id}",
             )
-            if selected_investor == "新增投资人":
-                selected_investor = col1.text_input("新投资人", value=row.investor, key=f"investor_new_{row.id}")
-
+            if edit_investor == "新增投资人":
+                edit_investor = st.text_input("新投资人", value=row.investor)
+        
+        with col2:
             is_fund = row.market == "A股" and row.symbol_code.isdigit() and len(row.symbol_code) == 6
-            new_cost = col2.number_input(
+            new_cost = st.number_input(
                 "成本",
                 value=float(row.cost_price),
                 step=0.0001 if is_fund else 0.01,
                 format="%.4f" if is_fund else "%.2f",
-                key=f"cost_{row.id}",
             )
-            new_qty = col3.number_input("数量", value=float(row.quantity), key=f"qty_{row.id}")
-
-            if can_edit:
-                if col4.button("保存", key=f"save_{row.id}"):
-                    ok = ctx.portfolio.update_investment(
-                        current_user,
-                        row.id,
-                        str(selected_investor).strip() or current_user,
-                        new_cost,
-                        new_qty,
-                    )
-                    if ok:
-                        st.rerun()
-                if col5.button("删除", key=f"del_{row.id}"):
-                    ok = ctx.portfolio.delete_investment(current_user, row.id)
-                    if ok:
-                        st.rerun()
+        
+        with col3:
+            new_qty = st.number_input("数量", value=float(row.quantity), step=0.01)
+        
+        c1, c2 = st.columns(2)
+        save_btn = c1.form_submit_button("保存修改", type="primary")
+        delete_btn = c2.form_submit_button("删除记录", type="secondary")
+        
+        if save_btn:
+            ok = ctx.portfolio.update_investment(
+                current_user,
+                row.id,
+                str(edit_investor).strip() or current_user,
+                new_cost,
+                new_qty,
+            )
+            if ok:
+                st.session_state[cache_key] = None
+                st.success("修改成功")
+                st.rerun()
             else:
-                col5.info("只读")
-
-            symbol = currency_symbol(row.currency)
-            st.write(f"当前价：{row.current_price:.4f} {row.currency}")
-            st.write(f"当前市值：{symbol}{row.current_market_value:,.2f}")
-            st.write(f"收益率：{row.yield_pct}%")
+                st.error("修改失败")
+        
+        if delete_btn:
+            ok = ctx.portfolio.delete_investment(current_user, row.id)
+            if ok:
+                st.session_state[cache_key] = None
+                st.success("删除成功")
+                st.rerun()
+            else:
+                st.error("删除失败")
 
 
 def render_logs_page(ctx: AppContext) -> None:
