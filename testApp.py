@@ -298,8 +298,33 @@ def init_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             owner TEXT NOT NULL,
             shared_with TEXT NOT NULL,
+            permission TEXT NOT NULL DEFAULT 'read',
             created_at TEXT,
             UNIQUE(owner, shared_with)
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS symbol_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market TEXT NOT NULL,
+            symbol_code TEXT NOT NULL,
+            symbol_name TEXT NOT NULL,
+            source TEXT,
+            updated_at TEXT,
+            UNIQUE(market, symbol_code)
+        )
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_symbol_cache_code ON symbol_cache(symbol_code)
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_symbol_cache_name ON symbol_cache(symbol_name)
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS app_meta (
+            meta_key TEXT PRIMARY KEY,
+            meta_value TEXT,
+            updated_at TEXT
         )
     """)
     c.execute("""
@@ -332,6 +357,14 @@ def init_database():
     if "user" not in cols:
         c.execute("ALTER TABLE investments ADD COLUMN user TEXT")
         conn.commit()
+
+    c.execute("PRAGMA table_info(shares)")
+    share_cols = [row[1] for row in c.fetchall()]
+    if "permission" not in share_cols:
+        c.execute("ALTER TABLE shares ADD COLUMN permission TEXT NOT NULL DEFAULT 'read'")
+        conn.commit()
+    c.execute("UPDATE shares SET permission='read' WHERE permission IS NULL OR TRIM(permission)=''")
+    conn.commit()
 
     c.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
     if c.fetchone()[0] == 0:
@@ -516,31 +549,71 @@ def login_user(username, password):
 # ------------------------------
 # 共享功能
 # ------------------------------
-def invite_user(owner, shared_with):
+def normalize_share_permission(permission):
+    return "edit" if permission == "edit" else "read"
+
+def permission_label(permission):
+    return "可编辑" if permission == "edit" else "只读"
+
+def invite_user(owner, shared_with, permission="read"):
     if owner == shared_with:
         return False, "不能邀请自己"
+    permission = normalize_share_permission(permission)
     c.execute("SELECT 1 FROM users WHERE username=?", (shared_with,))
     if not c.fetchone():
         return False, "用户不存在"
-    try:
-        c.execute("INSERT INTO shares (owner, shared_with, created_at) VALUES (?, ?, ?)",
-                  (owner, shared_with, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
-        return True, f"✅ 已邀请 {shared_with}"
-    except sqlite3.IntegrityError:
-        return False, "已邀请过该用户"
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute("SELECT permission FROM shares WHERE owner=? AND shared_with=?", (owner, shared_with))
+    existed = c.fetchone()
+    c.execute("""
+        INSERT INTO shares (owner, shared_with, permission, created_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(owner, shared_with) DO UPDATE SET
+            permission=excluded.permission,
+            created_at=excluded.created_at
+    """, (owner, shared_with, permission, now_str))
+    conn.commit()
+    if existed:
+        return True, f"✅ 已更新 {shared_with} 权限为「{permission_label(permission)}」"
+    return True, f"✅ 已邀请 {shared_with}（{permission_label(permission)}）"
 
 def revoke_share(owner, shared_with):
     c.execute("DELETE FROM shares WHERE owner=? AND shared_with=?", (owner, shared_with))
     conn.commit()
 
+def update_share_permission(owner, shared_with, permission):
+    permission = normalize_share_permission(permission)
+    c.execute("""
+        UPDATE shares
+        SET permission=?
+        WHERE owner=? AND shared_with=?
+    """, (permission, owner, shared_with))
+    conn.commit()
+
+def get_share_permission_map(shared_with):
+    c.execute("SELECT owner, permission FROM shares WHERE shared_with=?", (shared_with,))
+    data = {}
+    for owner, permission in c.fetchall():
+        data[owner] = normalize_share_permission(permission)
+    return data
+
+def can_edit_owner_data(owner, actor):
+    if owner == actor:
+        return True
+    if not owner:
+        return False
+    c.execute("SELECT permission FROM shares WHERE owner=? AND shared_with=?", (owner, actor))
+    row = c.fetchone()
+    if not row:
+        return False
+    return normalize_share_permission(row[0]) == "edit"
+
 def get_shared_owners(current_user):
-    c.execute("SELECT DISTINCT owner FROM shares WHERE shared_with=?", (current_user,))
-    return [row[0] for row in c.fetchall()]
+    return list(get_share_permission_map(current_user).keys())
 
 def get_my_invited_users(owner):
-    c.execute("SELECT shared_with FROM shares WHERE owner=?", (owner,))
-    return [row[0] for row in c.fetchall()]
+    c.execute("SELECT shared_with, permission FROM shares WHERE owner=? ORDER BY shared_with", (owner,))
+    return [{"shared_with": row[0], "permission": normalize_share_permission(row[1])} for row in c.fetchall()]
 
 # ------------------------------
 # 登录/注册页面 或 主界面
@@ -608,20 +681,40 @@ else:
         invited = get_my_invited_users(current_user)
         if invited:
             st.caption("我邀请的用户：")
-            for u in invited:
-                col1, col2 = st.columns([4, 1])
-                col1.write(f"• {u}")
-                if col2.button("撤销", key=f"revoke_{u}"):
-                    revoke_share(current_user, u)
+            for item in invited:
+                invited_user = item["shared_with"]
+                current_perm = item["permission"]
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+                col1.write(f"• {invited_user}")
+                new_perm = col2.selectbox(
+                    "权限",
+                    ["read", "edit"],
+                    index=0 if current_perm == "read" else 1,
+                    format_func=permission_label,
+                    key=f"share_perm_{invited_user}",
+                    label_visibility="collapsed"
+                )
+                if col3.button("保存", key=f"save_perm_{invited_user}"):
+                    update_share_permission(current_user, invited_user, new_perm)
+                    st.success(f"已更新 {invited_user} 为「{permission_label(new_perm)}」")
+                    st.rerun()
+                if col4.button("撤销", key=f"revoke_{invited_user}"):
+                    revoke_share(current_user, invited_user)
                     st.rerun()
         else:
             st.caption("暂无邀请用户")
 
         with st.expander("邀请新用户"):
             invite_username = st.text_input("对方用户名", key="invite_input")
+            invite_permission = st.selectbox(
+                "授权权限",
+                ["read", "edit"],
+                format_func=permission_label,
+                key="invite_permission"
+            )
             if st.button("发送邀请", type="primary", key="invite_btn"):
                 if invite_username:
-                    success, msg = invite_user(current_user, invite_username)
+                    success, msg = invite_user(current_user, invite_username, invite_permission)
                     if success:
                         st.success(msg)
                         st.rerun()
@@ -630,10 +723,11 @@ else:
                 else:
                     st.warning("请输入用户名")
 
-        shared_from = get_shared_owners(current_user)
-        if shared_from:
+        shared_permission_map = get_share_permission_map(current_user)
+        if shared_permission_map:
             st.caption("共享给我的人：")
-            st.write(", ".join(shared_from))
+            shared_text = [f"{owner}（{permission_label(shared_permission_map[owner])}）" for owner in sorted(shared_permission_map.keys())]
+            st.write("，".join(shared_text))
 
         render_auth_debug_panel("sidebar")
 
@@ -680,13 +774,24 @@ else:
             return code
 
     def get_symbol_name(market, code):
+        cached_name = get_cached_symbol_name(market, code)
+        if cached_name:
+            return cached_name
+
         if market == "A股":
             name = get_a_stock_name(code)
             if name == code:
                 name = get_fund_name(code)
+            if name and name != code:
+                upsert_symbol_cache([(market, code, name)], source="realtime_a_share")
             return name
         if market == "美股":
-            return get_us_stock_name(code)
+            name = get_us_stock_name(code)
+            if name and name != code:
+                upsert_symbol_cache([(market, code, name)], source="realtime_us")
+            return name
+        if market == "Crypto":
+            upsert_symbol_cache([(market, code, code)], source="realtime_crypto")
         return code
 
     @st.cache_data(ttl=30)
@@ -758,14 +863,282 @@ else:
                 prices[code] = 0
         return prices
 
+    def get_meta_value(meta_key, default_value=""):
+        c.execute("SELECT meta_value FROM app_meta WHERE meta_key=?", (meta_key,))
+        row = c.fetchone()
+        return row[0] if row else default_value
+
+    def set_meta_value(meta_key, meta_value):
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("""
+            INSERT INTO app_meta (meta_key, meta_value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(meta_key) DO UPDATE SET
+                meta_value=excluded.meta_value,
+                updated_at=excluded.updated_at
+        """, (meta_key, str(meta_value), now_str))
+        conn.commit()
+
+    def is_sync_due(meta_key, hours):
+        last_sync = get_meta_value(meta_key, "")
+        if not last_sync:
+            return True
+        try:
+            last_time = datetime.strptime(last_sync, "%Y-%m-%d %H:%M:%S")
+            return (datetime.now() - last_time).total_seconds() >= hours * 3600
+        except Exception:
+            return True
+
+    def upsert_symbol_cache(rows, source="manual"):
+        if not rows:
+            return 0
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        payload = []
+        for market, code, name in rows:
+            clean_market = str(market).strip()
+            clean_code = str(code).strip().upper()
+            clean_name = str(name).strip()
+            if not clean_market or not clean_code or not clean_name:
+                continue
+            payload.append((clean_market, clean_code, clean_name, source, now_str))
+        if not payload:
+            return 0
+        c.executemany("""
+            INSERT INTO symbol_cache (market, symbol_code, symbol_name, source, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(market, symbol_code) DO UPDATE SET
+                symbol_name=excluded.symbol_name,
+                source=excluded.source,
+                updated_at=excluded.updated_at
+        """, payload)
+        conn.commit()
+        return len(payload)
+
+    def cache_symbols_from_existing_investments():
+        c.execute("""
+            SELECT DISTINCT market, symbol_code, COALESCE(symbol_name, symbol_code)
+            FROM investments
+            WHERE symbol_code IS NOT NULL AND TRIM(symbol_code) != ''
+        """)
+        rows = c.fetchall()
+        return upsert_symbol_cache(rows, source="investments")
+
+    def seed_us_symbol_cache():
+        us_seeds = [
+            ("美股", "AAPL", "Apple Inc."),
+            ("美股", "MSFT", "Microsoft Corporation"),
+            ("美股", "GOOGL", "Alphabet Inc."),
+            ("美股", "AMZN", "Amazon.com, Inc."),
+            ("美股", "META", "Meta Platforms, Inc."),
+            ("美股", "TSLA", "Tesla, Inc."),
+            ("美股", "NVDA", "NVIDIA Corporation"),
+            ("美股", "AMD", "Advanced Micro Devices, Inc."),
+            ("美股", "NFLX", "Netflix, Inc."),
+            ("美股", "BABA", "Alibaba Group Holding Limited"),
+        ]
+        upsert_symbol_cache(us_seeds, source="seed")
+
+    def fetch_a_stock_symbols():
+        url = "https://push2.eastmoney.com/api/qt/clist/get"
+        rows = []
+        page_size = 500
+        fs_value = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
+        for page_no in range(1, 31):
+            params = {
+                "pn": page_no,
+                "pz": page_size,
+                "po": 1,
+                "np": 1,
+                "fltt": 2,
+                "invt": 2,
+                "fid": "f3",
+                "fs": fs_value,
+                "fields": "f12,f14",
+                "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+            }
+            try:
+                response = requests.get(url, params=params, timeout=8)
+                payload = response.json().get("data", {})
+                diff = payload.get("diff", [])
+                if isinstance(diff, dict):
+                    records = list(diff.values())
+                else:
+                    records = list(diff)
+            except Exception:
+                break
+            if not records:
+                break
+            for item in records:
+                code = str(item.get("f12", "")).strip().upper()
+                name = str(item.get("f14", "")).strip()
+                if code and name:
+                    rows.append(("A股", code, name))
+            if len(records) < page_size:
+                break
+        return rows
+
+    def fetch_fund_symbols():
+        try:
+            response = requests.get("https://fund.eastmoney.com/js/fundcode_search.js", timeout=10)
+            text = response.text
+            start = text.find("[")
+            end = text.rfind("]")
+            if start == -1 or end == -1 or end <= start:
+                return []
+            raw_json = text[start:end + 1]
+            items = json.loads(raw_json)
+            rows = []
+            for item in items:
+                if not isinstance(item, list) or len(item) < 3:
+                    continue
+                code = str(item[0]).strip().upper()
+                name = str(item[2]).strip() if item[2] else str(item[1]).strip()
+                if code and name:
+                    rows.append(("A股", code, name))
+            return rows
+        except Exception:
+            return []
+
+    def fetch_crypto_symbols():
+        try:
+            response = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=8)
+            items = response.json()
+            rows = []
+            for item in items:
+                symbol = str(item.get("symbol", "")).strip().upper()
+                if not symbol.endswith("USDT"):
+                    continue
+                base = symbol[:-4]
+                if base:
+                    rows.append(("Crypto", base, base))
+            return rows
+        except Exception:
+            return []
+
+    def refresh_us_symbol_cache_by_keyword(keyword):
+        clean_keyword = str(keyword).strip().upper()
+        if len(clean_keyword) < 2 or clean_keyword.isdigit():
+            return
+        cache_key = f"symbol_kw_synced_{clean_keyword}"
+        if st.session_state.get(cache_key):
+            return
+        try:
+            response = requests.get(
+                "https://query1.finance.yahoo.com/v1/finance/search",
+                params={"q": clean_keyword, "quotesCount": 20, "newsCount": 0},
+                timeout=8,
+            )
+            payload = response.json()
+            quotes = payload.get("quotes", [])
+            rows = []
+            for quote in quotes:
+                code = str(quote.get("symbol", "")).strip().upper()
+                if not code or "=" in code:
+                    continue
+                name = (
+                    str(quote.get("shortname", "")).strip()
+                    or str(quote.get("longname", "")).strip()
+                    or code
+                )
+                rows.append(("美股", code, name))
+            upsert_symbol_cache(rows, source="yahoo_search")
+            st.session_state[cache_key] = True
+        except Exception:
+            st.session_state[cache_key] = True
+
+    def ensure_symbol_cache_ready():
+        if st.session_state.get("symbol_cache_ready"):
+            return
+        seed_us_symbol_cache()
+        cache_symbols_from_existing_investments()
+
+        if is_sync_due("symbol_sync_a_stock", 24):
+            inserted = upsert_symbol_cache(fetch_a_stock_symbols(), source="eastmoney_a_stock")
+            if inserted > 0:
+                set_meta_value("symbol_sync_a_stock", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        if is_sync_due("symbol_sync_fund", 24):
+            inserted = upsert_symbol_cache(fetch_fund_symbols(), source="eastmoney_fund")
+            if inserted > 0:
+                set_meta_value("symbol_sync_fund", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        if is_sync_due("symbol_sync_crypto", 24):
+            inserted = upsert_symbol_cache(fetch_crypto_symbols(), source="binance")
+            if inserted > 0:
+                set_meta_value("symbol_sync_crypto", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        st.session_state.symbol_cache_ready = True
+
+    def search_symbol_cache(keyword, limit=30):
+        clean_keyword = str(keyword).strip()
+        if not clean_keyword:
+            return []
+        code_kw = clean_keyword.upper()
+        code_like = f"%{code_kw}%"
+        name_like = f"%{clean_keyword}%"
+        c.execute("""
+            SELECT market, symbol_code, symbol_name
+            FROM symbol_cache
+            WHERE UPPER(symbol_code) LIKE ? OR symbol_name LIKE ?
+            ORDER BY
+                CASE
+                    WHEN UPPER(symbol_code) = ? THEN 0
+                    WHEN UPPER(symbol_code) LIKE ? THEN 1
+                    WHEN symbol_name LIKE ? THEN 2
+                    ELSE 3
+                END,
+                updated_at DESC,
+                symbol_code ASC
+            LIMIT ?
+        """, (code_like, name_like, code_kw, f"{code_kw}%", f"{clean_keyword}%", int(limit)))
+        return [
+            {"market": row[0], "symbol_code": row[1], "symbol_name": row[2]}
+            for row in c.fetchall()
+        ]
+
+    def get_cached_symbol_name(market, code):
+        clean_code = str(code).strip().upper()
+        clean_market = str(market).strip()
+        c.execute("""
+            SELECT symbol_name
+            FROM symbol_cache
+            WHERE market=? AND symbol_code=?
+            LIMIT 1
+        """, (clean_market, clean_code))
+        row = c.fetchone()
+        if row and row[0]:
+            return row[0]
+        c.execute("""
+            SELECT symbol_name
+            FROM symbol_cache
+            WHERE symbol_code=?
+            ORDER BY updated_at DESC
+            LIMIT 1
+        """, (clean_code,))
+        row = c.fetchone()
+        return row[0] if row and row[0] else ""
+
     # ------------------------------
     # 数据操作（支持共享）
     # ------------------------------
-    @st.cache_data(ttl=3600)
     def is_fund_code(code):
-        if not code or not str(code).isdigit() or len(str(code)) != 6:
+        clean_code = str(code).strip().upper()
+        if not clean_code or not clean_code.isdigit() or len(clean_code) != 6:
             return False
-        return get_fund_name(str(code)) != str(code)
+        c.execute("""
+            SELECT source
+            FROM symbol_cache
+            WHERE market='A股' AND symbol_code=?
+            LIMIT 1
+        """, (clean_code,))
+        row = c.fetchone()
+        if row and row[0]:
+            source = str(row[0]).lower()
+            if "fund" in source:
+                return True
+            if "a_stock" in source:
+                return False
+        return get_fund_name(clean_code) != clean_code
 
     def is_fund_investment(market, symbol_code):
         return market == "A股" and is_fund_code(str(symbol_code))
@@ -839,7 +1212,6 @@ else:
             "update_time": "更新时间",
             "user": "归属人",
         }
-        action_alias = {"create": "新增", "update": "修改", "delete": "删除"}
         action = str(log_row.get("action", ""))
         before = parse_json_payload(log_row.get("before_data"))
         after = parse_json_payload(log_row.get("after_data"))
@@ -873,19 +1245,22 @@ else:
         rows = []
         for _, row in raw_df.iterrows():
             row_dict = row.to_dict()
+            before = parse_json_payload(row_dict.get("before_data"))
+            after = parse_json_payload(row_dict.get("after_data"))
+            owner = row_dict.get("owner") or after.get("user") or before.get("user") or ""
             rows.append({
                 "时间": row_dict.get("action_time", ""),
                 "操作人": row_dict.get("operator", ""),
                 "动作": action_alias.get(row_dict.get("action"), row_dict.get("action")),
                 "对象": entity_alias.get(row_dict.get("entity_type"), row_dict.get("entity_type")),
                 "标的": get_display_target(row_dict),
-                "归属人": row_dict.get("owner", ""),
+                "归属人": owner,
                 "变更摘要": build_change_summary(row_dict),
             })
         return pd.DataFrame(rows)
 
     def read_data(current_user):
-        shared_owners = get_shared_owners(current_user)
+        shared_owners = list(get_share_permission_map(current_user).keys())
         accessible = list(set([current_user] + shared_owners))
         if not accessible:
             return pd.DataFrame()
@@ -899,6 +1274,7 @@ else:
 
     def add_data(investor, market, symbol_code, symbol_name, channel, cost_price, quantity):
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        upsert_symbol_cache([(market, symbol_code, symbol_name)], source="user_submit")
         c.execute("""
             INSERT INTO investments 
             (investor, market, symbol_code, symbol_name, channel, cost_price, quantity, update_time, user)
@@ -920,94 +1296,103 @@ else:
                 "channel": channel,
                 "cost_price": float(cost_price),
                 "quantity": float(quantity),
-                "update_time": now_str
+                "update_time": now_str,
+                "user": current_user,
             }
         )
 
-    def delete_data(record_id, record_owner):
-        if record_owner == current_user:
-            c.execute("""
-                SELECT investor, market, symbol_code, symbol_name, channel, cost_price, quantity, update_time, user
-                FROM investments WHERE id=?
-            """, (record_id,))
-            old_row = c.fetchone()
-            before_data = None
-            if old_row:
-                before_data = {
-                    "investor": old_row[0],
-                    "market": old_row[1],
-                    "symbol_code": old_row[2],
-                    "symbol_name": old_row[3],
-                    "channel": old_row[4],
-                    "cost_price": float(old_row[5]),
-                    "quantity": float(old_row[6]),
-                    "update_time": old_row[7],
-                    "user": old_row[8],
-                }
-            c.execute("DELETE FROM investments WHERE id=?", (record_id,))
-            conn.commit()
-            record_operation_log(
-                entity_type="investment",
-                entity_id=record_id,
-                action="delete",
-                operator=current_user,
-                owner=record_owner,
-                before_data=before_data
-            )
-            return True
-        return False
+    def delete_data(record_id):
+        c.execute("""
+            SELECT investor, market, symbol_code, symbol_name, channel, cost_price, quantity, update_time, user
+            FROM investments WHERE id=?
+        """, (record_id,))
+        old_row = c.fetchone()
+        if not old_row:
+            return False
+        owner_from_record = old_row[8]
+        if not can_edit_owner_data(owner_from_record, current_user):
+            return False
+        record_owner = owner_from_record or current_user
 
-    def update_data(record_id, record_owner, cost_price, quantity):
-        if record_owner == current_user:
-            c.execute("""
-                SELECT investor, market, symbol_code, symbol_name, channel, cost_price, quantity, update_time, user
-                FROM investments WHERE id=?
-            """, (record_id,))
-            old_row = c.fetchone()
-            if not old_row:
-                return False
-            before_data = {
-                "investor": old_row[0],
-                "market": old_row[1],
-                "symbol_code": old_row[2],
-                "symbol_name": old_row[3],
-                "channel": old_row[4],
-                "cost_price": float(old_row[5]),
-                "quantity": float(old_row[6]),
-                "update_time": old_row[7],
-                "user": old_row[8],
-            }
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            c.execute("""
-                UPDATE investments
-                SET cost_price=?, quantity=?, update_time=?
-                WHERE id = ?
-            """, (cost_price, quantity, now_str, record_id))
-            conn.commit()
-            after_data = {
-                **before_data,
-                "cost_price": float(cost_price),
-                "quantity": float(quantity),
-                "update_time": now_str,
-            }
-            record_operation_log(
-                entity_type="investment",
-                entity_id=record_id,
-                action="update",
-                operator=current_user,
-                owner=record_owner,
-                before_data=before_data,
-                after_data=after_data
-            )
-            return True
-        return False
+        before_data = {
+            "investor": old_row[0],
+            "market": old_row[1],
+            "symbol_code": old_row[2],
+            "symbol_name": old_row[3],
+            "channel": old_row[4],
+            "cost_price": float(old_row[5]),
+            "quantity": float(old_row[6]),
+            "update_time": old_row[7],
+            "user": old_row[8],
+        }
+        c.execute("DELETE FROM investments WHERE id=?", (record_id,))
+        conn.commit()
+        record_operation_log(
+            entity_type="investment",
+            entity_id=record_id,
+            action="delete",
+            operator=current_user,
+            owner=record_owner,
+            before_data=before_data
+        )
+        return True
+
+    def update_data(record_id, cost_price, quantity):
+        c.execute("""
+            SELECT investor, market, symbol_code, symbol_name, channel, cost_price, quantity, update_time, user
+            FROM investments WHERE id=?
+        """, (record_id,))
+        old_row = c.fetchone()
+        if not old_row:
+            return False
+        owner_from_record = old_row[8]
+        if not can_edit_owner_data(owner_from_record, current_user):
+            return False
+        record_owner = owner_from_record or current_user
+
+        before_data = {
+            "investor": old_row[0],
+            "market": old_row[1],
+            "symbol_code": old_row[2],
+            "symbol_name": old_row[3],
+            "channel": old_row[4],
+            "cost_price": float(old_row[5]),
+            "quantity": float(old_row[6]),
+            "update_time": old_row[7],
+            "user": old_row[8],
+        }
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("""
+            UPDATE investments
+            SET cost_price=?, quantity=?, update_time=?
+            WHERE id = ?
+        """, (cost_price, quantity, now_str, record_id))
+        conn.commit()
+        after_data = {
+            **before_data,
+            "cost_price": float(cost_price),
+            "quantity": float(quantity),
+            "update_time": now_str,
+        }
+        record_operation_log(
+            entity_type="investment",
+            entity_id=record_id,
+            action="update",
+            operator=current_user,
+            owner=record_owner,
+            before_data=before_data,
+            after_data=after_data
+        )
+        return True
 
     # ------------------------------
     # 添加投资
     # ------------------------------
     with st.expander("➕ 添加投资", expanded=True):
+        ensure_symbol_cache_ready()
         investor_list = get_investor_list()
         col1, col2 = st.columns(2)
+        selected_symbol_name = ""
         with col1:
             if investor_list:
                 investor = st.selectbox("选择投资人", investor_list + ["新增投资人"])
@@ -1015,9 +1400,34 @@ else:
                     investor = st.text_input("输入新投资人", value=current_user)
             else:
                 investor = st.text_input("投资人", value=current_user)
-            symbol_code = st.text_input("标的代码（600519 / AAPL / BTC / 017437）")
-            symbol_code = symbol_code.strip().upper()
+            raw_symbol_input = st.text_input("标的代码（支持模糊查询：代码/名称）")
+            raw_symbol_input = raw_symbol_input.strip().upper()
+            symbol_code = raw_symbol_input
             preview_market = identify_market(symbol_code) if symbol_code else ""
+
+            if raw_symbol_input:
+                refresh_us_symbol_cache_by_keyword(raw_symbol_input)
+                candidates = search_symbol_cache(raw_symbol_input, limit=20)
+            else:
+                candidates = []
+
+            if candidates:
+                option_map = {}
+                option_list = ["保持手动输入"]
+                for item in candidates:
+                    label = f"{item['symbol_code']} | {item['symbol_name']} | {item['market']}"
+                    option_map[label] = item
+                    option_list.append(label)
+                pick_label = st.selectbox("匹配结果", option_list, key="symbol_match_choice")
+                if pick_label != "保持手动输入":
+                    picked = option_map[pick_label]
+                    symbol_code = picked["symbol_code"]
+                    preview_market = picked["market"]
+                    selected_symbol_name = picked["symbol_name"]
+                    st.caption(f"已选择：{selected_symbol_name}（{preview_market}）")
+                else:
+                    st.caption("未选择匹配项，将按输入代码提交")
+
             is_fund_for_input = is_fund_investment(preview_market, symbol_code) if symbol_code else False
         with col2:
             channel = st.text_input("渠道")
@@ -1031,8 +1441,8 @@ else:
 
         if st.button("提交", type="primary"):
             if symbol_code and quantity > 0:
-                market = identify_market(symbol_code)
-                name = get_symbol_name(market, symbol_code)
+                market = preview_market or identify_market(symbol_code)
+                name = selected_symbol_name or get_symbol_name(market, symbol_code)
                 add_data(investor, market, symbol_code, name, channel, cost_price, quantity)
                 st.success("✅ 添加成功")
                 st.rerun()
@@ -1052,7 +1462,7 @@ else:
         if logs_df.empty:
             st.caption("暂无日志记录")
         else:
-            st.dataframe(logs_df, width="stretch", hide_index=True)
+            st.dataframe(logs_df, width='stretch', hide_index=True)
 
     # ------------------------------
     # 投资明细 & 汇总
@@ -1083,12 +1493,17 @@ else:
         df["yield_pct"] = ((df["profit"] / df["total_cost"]) * 100).round(2).fillna(0)
 
         for _, row in df.iterrows():
-            owner = row.get("user", "未知")
+            owner_raw = row.get("user", "")
+            owner = owner_raw.strip() if isinstance(owner_raw, str) else ""
+            owner_display = owner if owner else "未知"
             with st.expander(f"{row['investor']} - {row['symbol_name']} ({row['symbol_code']})"):
+                can_edit_row = can_edit_owner_data(owner, current_user)
                 if owner == current_user:
                     st.caption("✅ 你是所有者 • 可编辑")
+                elif can_edit_row:
+                    st.caption(f"🔗 由 **{owner_display}** 共享给你 • 你有编辑权限")
                 else:
-                    st.caption(f"🔗 由 **{owner}** 共享给你 • 只读")
+                    st.caption(f"🔗 由 **{owner_display}** 共享给你 • 只读")
 
                 row_is_fund = is_fund_investment(row["market"], row["symbol_code"])
                 col1, col2, col3 = st.columns([1, 1, 1])
@@ -1101,12 +1516,12 @@ else:
                 )
                 new_qty = col2.number_input("数量", value=float(row["quantity"]), key=f"qty{row['id']}")
 
-                if owner == current_user:
+                if can_edit_row:
                     if col3.button("💾 保存", key=f"save{row['id']}"):
-                        if update_data(row["id"], owner, new_cost, new_qty):
+                        if update_data(row["id"], new_cost, new_qty):
                             st.rerun()
                     if col3.button("🗑️ 删除", key=f"del{row['id']}"):
-                        if delete_data(row["id"], owner):
+                        if delete_data(row["id"]):
                             st.rerun()
                 else:
                     col3.info("只读")
