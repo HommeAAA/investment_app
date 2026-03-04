@@ -98,6 +98,147 @@ def auth_log(event, **kwargs):
 st.set_page_config(page_title="全球资产管理系统 Pro Ultimate", layout="wide", page_icon="🌍")
 st.title("🌍 全球资产管理系统 Pro Ultimate")
 
+def render_ui_style():
+    st.markdown(
+        """
+        <style>
+        :root {
+            --app-bg: #f4f8fc;
+            --app-card: #ffffff;
+            --app-border: #d7e5f2;
+            --app-text: #102a43;
+            --app-subtext: #486581;
+            --app-accent: #0f766e;
+        }
+
+        [data-testid="stAppViewContainer"] {
+            background:
+              radial-gradient(850px 320px at 4% -8%, #dcefff 0%, transparent 60%),
+              radial-gradient(760px 300px at 98% 0%, #dcf7ef 0%, transparent 58%),
+              var(--app-bg);
+            color: var(--app-text);
+        }
+
+        /* 解决顶部空白/遮挡问题 */
+        [data-testid="stHeader"] {
+            height: 0;
+            background: transparent;
+        }
+        [data-testid="stToolbar"] {
+            display: none;
+        }
+        .block-container {
+            padding-top: 0.45rem;
+            padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+            max-width: 1180px;
+        }
+
+        h1, h2, h3 {
+            color: var(--app-text);
+            letter-spacing: -0.01em;
+        }
+        h1 {
+            margin-top: 0.15rem !important;
+            padding-top: 0 !important;
+            margin-bottom: 0.35rem !important;
+        }
+
+        [data-testid="stExpander"] {
+            border: 1px solid var(--app-border);
+            border-radius: 16px;
+            background: var(--app-card);
+            box-shadow: 0 8px 24px rgba(16, 42, 67, 0.06);
+        }
+
+        [data-testid="stMetric"] {
+            border: 1px solid var(--app-border);
+            border-radius: 14px;
+            background: #fff;
+            box-shadow: 0 4px 16px rgba(16, 42, 67, 0.05);
+        }
+
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="select"] > div {
+            border-radius: 12px;
+            border-color: #cbdbe9;
+            background: #fbfdff;
+        }
+
+        .stButton > button {
+            border-radius: 12px;
+            min-height: 44px;
+        }
+
+        .stButton > button[data-testid="baseButton-primary"] {
+            border: none;
+            color: #fff;
+            background: linear-gradient(120deg, #0f766e 0%, #14b8a6 100%);
+            box-shadow: 0 10px 22px rgba(15, 118, 110, 0.25);
+        }
+
+        [data-testid="stCaptionContainer"] {
+            color: var(--app-subtext);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --app-bg: #0b1220;
+                --app-card: #111b2e;
+                --app-border: #24344e;
+                --app-text: #e6eef8;
+                --app-subtext: #9fb3c8;
+                --app-accent: #2dd4bf;
+            }
+
+            [data-testid="stAppViewContainer"] {
+                background:
+                  radial-gradient(900px 360px at 0% -10%, #13243f 0%, transparent 62%),
+                  radial-gradient(820px 320px at 100% 0%, #123336 0%, transparent 58%),
+                  var(--app-bg);
+                color: var(--app-text);
+            }
+
+            h1, h2, h3, p, label, span, div {
+                color: var(--app-text);
+            }
+
+            [data-testid="stExpander"],
+            [data-testid="stMetric"] {
+                background: var(--app-card);
+                border-color: var(--app-border);
+                box-shadow: none;
+            }
+
+            div[data-baseweb="input"] > div,
+            div[data-baseweb="select"] > div {
+                background: #0f1727;
+                border-color: #334866;
+            }
+
+            .stButton > button {
+                background: #1a2940;
+                border-color: #334866;
+                color: #e6eef8;
+            }
+
+            .stButton > button[data-testid="baseButton-primary"] {
+                color: #042220;
+                background: linear-gradient(120deg, #2dd4bf 0%, #67e8f9 100%);
+                box-shadow: none;
+            }
+
+            [data-testid="stDataFrame"] {
+                border: 1px solid #334866;
+                border-radius: 14px;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+render_ui_style()
+
 # ------------------------------
 # 数据库连接
 # ------------------------------
@@ -969,11 +1110,11 @@ def render_pending_passkey_action():
     components.html(
         f"""
         <div style="padding: 8px 0;">
-          <button id="passkey-trigger-btn" style="width:100%;padding:10px 12px;border:0;border-radius:8px;background:#0f766e;color:#fff;font-weight:600;">
-            继续 Face ID 验证
+          <button id="passkey-trigger-btn" style="width:100%;padding:10px 12px;border:0;border-radius:8px;background:#0f766e;color:#fff;font-weight:600;display:none;">
+            重试 Face ID
           </button>
           <div id="passkey-status" style="margin-top:8px;font-size:13px;color:#475569;">
-            请点击上方按钮后进行 Face ID。
+            正在拉起 Face ID，请在系统弹窗中确认...
           </div>
         </div>
         <script>
@@ -1135,21 +1276,38 @@ def render_pending_passkey_action():
                 setStatus("无法渲染 Face ID 按钮，请刷新页面重试。", true);
                 return;
             }}
-            triggerBtn.addEventListener("click", () => {{
+            let passkeyStarted = false;
+            function startPasskeyFlow() {{
+                if (passkeyStarted) return;
+                passkeyStarted = true;
                 triggerBtn.disabled = true;
                 triggerBtn.style.opacity = "0.7";
                 setStatus("正在请求 Face ID，请在系统弹窗中确认...", false);
                 runPasskey();
+            }}
+
+            triggerBtn.addEventListener("click", () => {{
+                startPasskeyFlow();
             }});
+
+            // 主流 App 体验：页面返回后自动拉起，不需要二次点击
             setTimeout(() => {{
-                try {{
-                    triggerBtn.focus();
-                }} catch (e) {{}}
-            }}, 50);
+                startPasskeyFlow();
+            }}, 80);
+
+            // 如果自动拉起失败，显示重试按钮
+            setTimeout(() => {{
+                if (!passkeyStarted) {{
+                    triggerBtn.style.display = "block";
+                    triggerBtn.disabled = false;
+                    triggerBtn.style.opacity = "1";
+                    setStatus("自动唤起失败，请点击“重试 Face ID”。", true);
+                }}
+            }}, 1800);
         }})();
         </script>
         """,
-        height=120,
+        height=70,
     )
 
 # ------------------------------
@@ -2168,14 +2326,6 @@ else:
 
     st.button("🔄 刷新行情", on_click=refresh_prices)
 
-    with st.expander("🧭 操作日志（审计）", expanded=False):
-        log_limit = st.selectbox("显示条数", [50, 100, 200, 500], index=2)
-        logs_df = get_friendly_logs_df(limit=log_limit)
-        if logs_df.empty:
-            st.caption("暂无日志记录")
-        else:
-            st.dataframe(logs_df, width='stretch', hide_index=True)
-
     # ------------------------------
     # 投资明细 & 汇总
     # ------------------------------
@@ -2255,5 +2405,14 @@ else:
         c4.metric("总收益率", f"{total_yield}%")
     else:
         st.info("暂无数据，快去添加吧！")
+
+    # 操作日志放在页面最下方
+    with st.expander("🧭 操作日志（审计）", expanded=False):
+        log_limit = st.selectbox("显示条数", [50, 100, 200, 500], index=2)
+        logs_df = get_friendly_logs_df(limit=log_limit)
+        if logs_df.empty:
+            st.caption("暂无日志记录")
+        else:
+            st.dataframe(logs_df, width='stretch', hide_index=True)
 
     st.caption(f"全球资产管理系统 Pro Ultimate v2.6 | 刷新不登出已修复")
