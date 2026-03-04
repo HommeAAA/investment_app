@@ -32,6 +32,36 @@ def get_db_connection():
 conn = get_db_connection()
 c = conn.cursor()
 
+# ------------------------------
+# 密码函数（支持旧密码自动迁移）← 关键修复
+# ------------------------------
+def hash_password(password):
+    """生成 bcrypt 哈希"""
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def is_legacy_hash(password_hash):
+    """判断是否为旧的 sha256 哈希（64位十六进制）"""
+    if len(password_hash) != 64:
+        return False
+    return all(c in '0123456789abcdefABCDEF' for c in password_hash)
+
+
+def verify_password(password, stored_hash):
+    """验证密码，支持旧sha256自动迁移到bcrypt"""
+    if is_legacy_hash(stored_hash):
+        # 用旧方式验证
+        legacy_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
+        if legacy_hash == stored_hash:
+            return True, True  # 验证成功，需要升级
+        return False, False
+    else:
+        # 正常 bcrypt 验证
+        try:
+            result = bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
+            return result, False
+        except Exception:
+            return False, False
 
 # ------------------------------
 # 数据库初始化
@@ -136,39 +166,6 @@ def init_database():
 
 
 init_database()
-
-
-# ------------------------------
-# 密码函数（支持旧密码自动迁移）← 关键修复
-# ------------------------------
-def hash_password(password):
-    """生成 bcrypt 哈希"""
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-
-def is_legacy_hash(password_hash):
-    """判断是否为旧的 sha256 哈希（64位十六进制）"""
-    if len(password_hash) != 64:
-        return False
-    return all(c in '0123456789abcdefABCDEF' for c in password_hash)
-
-
-def verify_password(password, stored_hash):
-    """验证密码，支持旧sha256自动迁移到bcrypt"""
-    if is_legacy_hash(stored_hash):
-        # 用旧方式验证
-        legacy_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
-        if legacy_hash == stored_hash:
-            return True, True  # 验证成功，需要升级
-        return False, False
-    else:
-        # 正常 bcrypt 验证
-        try:
-            result = bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
-            return result, False
-        except Exception:
-            return False, False
-
 
 def register_user(username, password):
     try:
