@@ -1338,12 +1338,15 @@ def maybe_restore_login(ctx: AppContext) -> None:
 
 def run_app() -> None:
     settings = get_settings()
-    st.set_page_config(
-        page_title=settings.app_name,
-        layout="wide",
-        page_icon="🌍",
-        initial_sidebar_state="expanded",
-    )
+    try:
+        st.set_page_config(
+            page_title=settings.app_name,
+            layout="wide",
+            page_icon="🌍",
+            initial_sidebar_state="expanded",
+        )
+    except Exception:
+        pass
 
     init_session_state()
 
