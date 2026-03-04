@@ -13,7 +13,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from .config import get_settings
-from .db import get_database_status, init_db
+from .db import DatabaseConnectionError, get_database_display_name, init_db
 from .services import AuthService, LogService, MarketService, PortfolioService, ShareService
 
 try:
@@ -1037,9 +1037,7 @@ def currency_symbol(currency: str) -> str:
 
 
 def render_data_source_status() -> None:
-    status = get_database_status()
-    driver = status.get("driver", "unknown")
-    name = "PostgreSQL" if driver == "postgresql" else "SQLite"
+    name = get_database_display_name()
     st.caption(f"数据源：{name}")
 
 

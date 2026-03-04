@@ -18,6 +18,10 @@ class Base(DeclarativeBase):
     pass
 
 
+class DatabaseConnectionError(RuntimeError):
+    pass
+
+
 _engine = None
 SessionLocal = None
 _active_database_url = None
@@ -40,10 +44,10 @@ def get_engine():
         logger.info("Using database: %s", settings.database_url)
         _active_database_url = settings.database_url
     except (NoSuchModuleError, OperationalError, ModuleNotFoundError) as exc:
-        raise RuntimeError(
-            "PostgreSQL connection failed. Set a valid DATABASE_URL "
-            "(or Streamlit secrets DATABASE_URL) and ensure network access."
-        )
+        raise DatabaseConnectionError(
+            "PostgreSQL connection failed. Configure a valid DATABASE_URL "
+            "(env or Streamlit Secrets), and verify host/port/user/password/database/SSL."
+        ) from exc
 
     SessionLocal = scoped_session(
         sessionmaker(bind=_engine, autoflush=False, autocommit=False, expire_on_commit=False)
@@ -84,3 +88,8 @@ def get_database_status() -> dict[str, str]:
         url_text = "unknown"
     driver = "sqlite" if url_text.startswith("sqlite:") else "postgresql"
     return {"driver": driver, "url": url_text}
+
+
+def get_database_display_name() -> str:
+    status = get_database_status()
+    return "PostgreSQL" if status.get("driver") == "postgresql" else "SQLite"

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from collections.abc import Mapping
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -15,6 +17,67 @@ class Settings:
     auth_max_age_seconds: int
     admin_username: str
     admin_password: str
+
+
+def _normalize_database_url(url: str) -> str:
+    value = str(url or "").strip()
+    if value.startswith("postgres://"):
+        return "postgresql+psycopg://" + value[len("postgres://") :]
+    return value
+
+
+def _read_secret_path(data: Any, path: list[str]) -> str:
+    node = data
+    for key in path:
+        if isinstance(node, Mapping) and key in node:
+            node = node[key]
+        else:
+            return ""
+    if isinstance(node, str):
+        return node.strip()
+    return ""
+
+
+def _read_database_url(default: str) -> str:
+    env_candidates = [
+        "DATABASE_URL",
+        "database_url",
+        "POSTGRES_URL",
+        "POSTGRESQL_URL",
+        "DB_URL",
+    ]
+    for name in env_candidates:
+        value = os.getenv(name, "").strip()
+        if value:
+            return _normalize_database_url(value)
+
+    try:
+        import streamlit as st  # local import to avoid hard dependency at module import time
+
+        secrets = st.secrets
+        direct_keys = ["DATABASE_URL", "database_url", "POSTGRES_URL", "POSTGRESQL_URL", "DB_URL"]
+        for key in direct_keys:
+            value = secrets.get(key, "")
+            if isinstance(value, str) and value.strip():
+                return _normalize_database_url(value)
+
+        nested_paths = [
+            ["database", "url"],
+            ["db", "url"],
+            ["postgres", "url"],
+            ["postgresql", "url"],
+            ["connections", "postgresql", "url"],
+            ["connections", "postgres", "url"],
+            ["connections", "db", "url"],
+        ]
+        for path in nested_paths:
+            value = _read_secret_path(secrets, path)
+            if value:
+                return _normalize_database_url(value)
+    except Exception:
+        pass
+
+    return _normalize_database_url(default)
 
 
 def _read_setting(name: str, default: str = "") -> str:
@@ -36,8 +99,7 @@ def _read_setting(name: str, default: str = "") -> str:
 def get_settings() -> Settings:
     return Settings(
         app_name="全球资产管理系统 Pro",
-        database_url=_read_setting(
-            "DATABASE_URL",
+        database_url=_read_database_url(
             "postgresql+psycopg://postgres:postgres@localhost:5432/investment_app",
         ),
         sqlite_fallback_url=_read_setting(
