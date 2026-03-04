@@ -11,7 +11,27 @@ import hashlib
 import hmac
 import time
 import json
+import base64
 import streamlit.components.v1 as components
+
+try:
+    from webauthn import (
+        generate_registration_options,
+        verify_registration_response,
+        generate_authentication_options,
+        verify_authentication_response,
+        options_to_json,
+    )
+    from webauthn.helpers.structs import (
+        AuthenticatorSelectionCriteria,
+        ResidentKeyRequirement,
+        UserVerificationRequirement,
+    )
+    WEBAUTHN_AVAILABLE = True
+    WEBAUTHN_IMPORT_ERROR = ""
+except Exception as e:
+    WEBAUTHN_AVAILABLE = False
+    WEBAUTHN_IMPORT_ERROR = str(e)
 
 # ------------------------------
 # Session State 初始化（必须放在最顶部！解决刷新登出）
@@ -24,6 +44,12 @@ if "pending_auth_token" not in st.session_state:
     st.session_state.pending_auth_token = None
 if "clear_auth_client" not in st.session_state:
     st.session_state.clear_auth_client = False
+if "passkey_pending_action" not in st.session_state:
+    st.session_state.passkey_pending_action = None
+if "passkey_registration_state" not in st.session_state:
+    st.session_state.passkey_registration_state = None
+if "passkey_auth_state" not in st.session_state:
+    st.session_state.passkey_auth_state = None
 
 # ------------------------------
 # 基础设置 + 可写数据库路径
@@ -37,6 +63,11 @@ AUTH_SECRET = os.environ.get("APP_AUTH_SECRET", "change-me-in-production")
 AUTH_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 AUTH_LOG_PATH = "/tmp/investment_app_auth.log"
 CLIENT_ID_COOKIE = "investment_app_client_id"
+PASSKEY_RESULT_QUERY_KEY = "passkey_result"
+PASSKEY_CHALLENGE_TTL_SECONDS = 3 * 60
+WEBAUTHN_RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "Investment App")
+WEBAUTHN_RP_ID = os.environ.get("WEBAUTHN_RP_ID", "").strip()
+WEBAUTHN_ORIGIN = os.environ.get("WEBAUTHN_ORIGIN", "").strip()
 
 auth_logger = logging.getLogger("investment_app.auth")
 if not auth_logger.handlers:
@@ -120,47 +151,73 @@ def parse_auth_token(token):
         auth_log("token_parse_error", error=str(e))
         return None
 
-def get_auth_token_from_query():
-    token = None
+def b64url_encode(raw_bytes):
+    return base64.urlsafe_b64encode(raw_bytes).rstrip(b"=").decode("utf-8")
+
+def b64url_decode(raw_str):
+    if not raw_str:
+        return b""
+    padded = raw_str + "=" * ((4 - len(raw_str) % 4) % 4)
+    return base64.urlsafe_b64decode(padded.encode("utf-8"))
+
+def get_query_value(key):
+    value = None
     try:
-        token = st.query_params.get("auth")
+        value = st.query_params.get(key)
     except:
         pass
-    if token is None:
+    if value is None:
         try:
             qp = st.experimental_get_query_params()
-            token = qp.get("auth")
+            value = qp.get(key)
         except:
-            token = None
-    if isinstance(token, list):
-        return token[0] if token else None
-    return token
+            value = None
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
 
-def set_auth_token_to_query(token):
+def set_query_value(key, value):
     try:
-        st.query_params["auth"] = token
-        return
-    except:
-        pass
-    try:
-        st.experimental_set_query_params(auth=token)
-    except:
-        pass
-
-def clear_auth_token_from_query():
-    try:
-        if "auth" in st.query_params:
-            del st.query_params["auth"]
+        st.query_params[key] = value
         return
     except:
         pass
     try:
         qp = st.experimental_get_query_params()
-        qp.pop("auth", None)
+        qp[key] = [value]
+        flattened = {}
+        for k, v in qp.items():
+            if isinstance(v, list):
+                flattened[k] = v
+            else:
+                flattened[k] = [v]
+        st.experimental_set_query_params(**flattened)
+    except:
+        pass
+
+def clear_query_value(key):
+    try:
+        if key in st.query_params:
+            del st.query_params[key]
+        return
+    except:
+        pass
+    try:
+        qp = st.experimental_get_query_params()
+        qp.pop(key, None)
         cleaned = {k: v for k, v in qp.items() if v}
         st.experimental_set_query_params(**cleaned)
     except:
         pass
+
+def get_auth_token_from_query():
+    return get_query_value("auth")
+
+def set_auth_token_to_query(token):
+    set_query_value("auth", token)
+
+def clear_auth_token_from_query():
+    clear_query_value("auth")
 
 def render_client_auth_bridge(token_to_store=None, clear_client=False):
     safe_token = token_to_store or ""
@@ -350,6 +407,21 @@ def init_database():
             updated_at TEXT
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS user_passkeys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            credential_id TEXT UNIQUE NOT NULL,
+            public_key TEXT NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0,
+            transports TEXT,
+            created_at TEXT,
+            last_used_at TEXT
+        )
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_user_passkeys_username ON user_passkeys(username)
+    """)
     conn.commit()
 
     c.execute("PRAGMA table_info(investments)")
@@ -478,6 +550,482 @@ def restore_login_session():
              username=username, hit_key_prefix=hit_key[:12], all_key_prefixes=",".join([k[:12] for k in client_keys]))
     return username if user_exists else None
 
+def get_webauthn_context():
+    headers = get_request_headers()
+    host = headers.get("Host", "") or headers.get("host", "")
+    proto = headers.get("X-Forwarded-Proto", "") or headers.get("x-forwarded-proto", "")
+
+    if "," in host:
+        host = host.split(",")[0].strip()
+    if "," in proto:
+        proto = proto.split(",")[0].strip()
+    if not proto:
+        proto = "http"
+
+    rp_id = WEBAUTHN_RP_ID or (host.split(":")[0] if host else "")
+    origin = WEBAUTHN_ORIGIN or (f"{proto}://{host}" if host else "")
+    return rp_id, origin
+
+def is_secure_webauthn_origin(origin):
+    if not origin:
+        return False
+    return (
+        origin.startswith("https://")
+        or origin.startswith("http://localhost")
+        or origin.startswith("http://127.0.0.1")
+    )
+
+def list_user_passkeys(username):
+    c.execute(
+        """
+        SELECT id, credential_id, sign_count, transports, created_at, last_used_at
+        FROM user_passkeys
+        WHERE username=?
+        ORDER BY id DESC
+        """,
+        (username,),
+    )
+    rows = []
+    for row in c.fetchall():
+        rows.append(
+            {
+                "id": row[0],
+                "credential_id": row[1],
+                "sign_count": row[2],
+                "transports": row[3] or "[]",
+                "created_at": row[4],
+                "last_used_at": row[5],
+            }
+        )
+    return rows
+
+def get_passkey_by_credential_id(credential_id):
+    c.execute(
+        """
+        SELECT id, username, credential_id, public_key, sign_count
+        FROM user_passkeys
+        WHERE credential_id=?
+        """,
+        (credential_id,),
+    )
+    row = c.fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "username": row[1],
+        "credential_id": row[2],
+        "public_key": row[3],
+        "sign_count": int(row[4] or 0),
+    }
+
+def upsert_user_passkey(username, credential_id, public_key, sign_count, transports):
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute(
+        """
+        INSERT INTO user_passkeys (username, credential_id, public_key, sign_count, transports, created_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(credential_id) DO UPDATE SET
+            username=excluded.username,
+            public_key=excluded.public_key,
+            sign_count=excluded.sign_count,
+            transports=excluded.transports
+        """,
+        (
+            username,
+            credential_id,
+            public_key,
+            int(sign_count or 0),
+            json.dumps(transports or [], ensure_ascii=False),
+            now_str,
+            now_str,
+        ),
+    )
+    conn.commit()
+
+def update_passkey_sign_count(credential_id, sign_count):
+    c.execute(
+        """
+        UPDATE user_passkeys
+        SET sign_count=?, last_used_at=?
+        WHERE credential_id=?
+        """,
+        (int(sign_count or 0), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), credential_id),
+    )
+    conn.commit()
+
+def delete_user_passkey(username, passkey_id):
+    c.execute("DELETE FROM user_passkeys WHERE id=? AND username=?", (passkey_id, username))
+    conn.commit()
+
+def create_login_state(username):
+    token = make_auth_token(username)
+    st.session_state.logged_in = True
+    st.session_state.username = username
+    st.session_state.pending_auth_token = token
+    st.session_state.clear_auth_client = False
+    set_auth_token_to_query(token)
+    upsert_login_session(username)
+
+def start_passkey_registration(username):
+    if not WEBAUTHN_AVAILABLE:
+        return False, f"未安装 webauthn 依赖：{WEBAUTHN_IMPORT_ERROR}"
+
+    rp_id, origin = get_webauthn_context()
+    if not rp_id or not origin:
+        return False, "无法识别当前域名，请配置 WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN。"
+    if not is_secure_webauthn_origin(origin):
+        return False, "Passkey 需要 HTTPS 域名（或 localhost）。请改用 HTTPS 访问。"
+
+    user_id = hashlib.sha256(f"user:{username}".encode("utf-8")).digest()
+    try:
+        options = generate_registration_options(
+            rp_id=rp_id,
+            rp_name=WEBAUTHN_RP_NAME,
+            user_id=user_id,
+            user_name=username,
+            user_display_name=username,
+            authenticator_selection=AuthenticatorSelectionCriteria(
+                resident_key=ResidentKeyRequirement.REQUIRED,
+                user_verification=UserVerificationRequirement.REQUIRED,
+            ),
+        )
+    except TypeError:
+        options = generate_registration_options(
+            rp_id=rp_id,
+            rp_name=WEBAUTHN_RP_NAME,
+            user_id=user_id,
+            user_name=username,
+            user_display_name=username,
+        )
+    options_payload = json.loads(options_to_json(options))
+    challenge = options_payload.get("challenge")
+    if not challenge:
+        return False, "生成 Passkey 注册挑战失败"
+
+    st.session_state.passkey_registration_state = {
+        "username": username,
+        "rp_id": rp_id,
+        "origin": origin,
+        "challenge": challenge,
+        "created_at": int(time.time()),
+    }
+    st.session_state.passkey_pending_action = {
+        "mode": "register",
+        "options": options_payload,
+    }
+    auth_log("passkey_register_begin", username=username, rp_id=rp_id, origin=origin)
+    return True, "请在系统弹窗中完成 Face ID 注册。"
+
+def start_passkey_authentication():
+    if not WEBAUTHN_AVAILABLE:
+        return False, f"未安装 webauthn 依赖：{WEBAUTHN_IMPORT_ERROR}"
+
+    rp_id, origin = get_webauthn_context()
+    if not rp_id or not origin:
+        return False, "无法识别当前域名，请配置 WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN。"
+    if not is_secure_webauthn_origin(origin):
+        return False, "Passkey 需要 HTTPS 域名（或 localhost）。请改用 HTTPS 访问。"
+
+    try:
+        options = generate_authentication_options(
+            rp_id=rp_id,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        )
+    except TypeError:
+        options = generate_authentication_options(rp_id=rp_id)
+    options_payload = json.loads(options_to_json(options))
+    challenge = options_payload.get("challenge")
+    if not challenge:
+        return False, "生成 Passkey 登录挑战失败"
+
+    st.session_state.passkey_auth_state = {
+        "rp_id": rp_id,
+        "origin": origin,
+        "challenge": challenge,
+        "created_at": int(time.time()),
+    }
+    st.session_state.passkey_pending_action = {
+        "mode": "authenticate",
+        "options": options_payload,
+    }
+    auth_log("passkey_auth_begin", rp_id=rp_id, origin=origin)
+    return True, "请在系统弹窗中完成 Face ID 验证。"
+
+def consume_passkey_query_result():
+    encoded = get_query_value(PASSKEY_RESULT_QUERY_KEY)
+    if not encoded:
+        return None
+    clear_query_value(PASSKEY_RESULT_QUERY_KEY)
+    try:
+        raw_json = b64url_decode(encoded).decode("utf-8")
+        return json.loads(raw_json)
+    except Exception as e:
+        auth_log("passkey_query_decode_error", error=str(e))
+        st.error("Face ID 回调数据解析失败，请重试。")
+        return None
+
+def challenge_is_expired(state):
+    if not state:
+        return True
+    created_at = int(state.get("created_at") or 0)
+    return int(time.time()) - created_at > PASSKEY_CHALLENGE_TTL_SECONDS
+
+def finalize_passkey_registration(payload):
+    state = st.session_state.passkey_registration_state
+    st.session_state.passkey_registration_state = None
+
+    if not state:
+        return False, "Face ID 注册会话不存在，请重新点击“启用 Face ID”。"
+    if challenge_is_expired(state):
+        return False, "Face ID 注册已超时，请重试。"
+
+    try:
+        verification = verify_registration_response(
+            credential=payload,
+            expected_challenge=b64url_decode(state["challenge"]),
+            expected_origin=state["origin"],
+            expected_rp_id=state["rp_id"],
+            require_user_verification=True,
+        )
+        credential_id_raw = getattr(verification, "credential_id")
+        public_key_raw = getattr(verification, "credential_public_key")
+        sign_count = int(getattr(verification, "sign_count", 0) or 0)
+
+        credential_id = credential_id_raw if isinstance(credential_id_raw, str) else b64url_encode(credential_id_raw)
+        public_key = public_key_raw if isinstance(public_key_raw, str) else b64url_encode(public_key_raw)
+        transports = payload.get("response", {}).get("transports", [])
+
+        upsert_user_passkey(state["username"], credential_id, public_key, sign_count, transports)
+        auth_log("passkey_register_ok", username=state["username"], credential_prefix=credential_id[:12])
+        return True, "Face ID 已启用，下次可直接刷脸登录。"
+    except Exception as e:
+        auth_log("passkey_register_failed", error=str(e))
+        return False, f"Face ID 注册失败：{e}"
+
+def finalize_passkey_authentication(payload):
+    state = st.session_state.passkey_auth_state
+    st.session_state.passkey_auth_state = None
+
+    if not state:
+        return False, "Face ID 登录会话不存在，请重试。", None
+    if challenge_is_expired(state):
+        return False, "Face ID 登录已超时，请重试。", None
+
+    credential_id = payload.get("id") or payload.get("rawId")
+    passkey = get_passkey_by_credential_id(credential_id)
+    if not passkey and payload.get("rawId"):
+        passkey = get_passkey_by_credential_id(payload.get("rawId"))
+        credential_id = payload.get("rawId")
+    if not passkey:
+        return False, "未找到该设备的 Passkey，请先用密码登录并启用 Face ID。", None
+
+    try:
+        verification = verify_authentication_response(
+            credential=payload,
+            expected_challenge=b64url_decode(state["challenge"]),
+            expected_origin=state["origin"],
+            expected_rp_id=state["rp_id"],
+            credential_public_key=b64url_decode(passkey["public_key"]),
+            credential_current_sign_count=int(passkey["sign_count"]),
+            require_user_verification=True,
+        )
+        new_sign_count = int(getattr(verification, "new_sign_count", passkey["sign_count"]) or 0)
+        update_passkey_sign_count(credential_id, new_sign_count)
+        auth_log("passkey_auth_ok", username=passkey["username"], credential_prefix=credential_id[:12])
+        return True, "Face ID 登录成功。", passkey["username"]
+    except Exception as e:
+        auth_log("passkey_auth_failed", error=str(e))
+        return False, f"Face ID 登录失败：{e}", None
+
+def handle_passkey_query_result():
+    result = consume_passkey_query_result()
+    if not result:
+        return
+
+    mode = result.get("mode")
+    ok = bool(result.get("ok"))
+    if not ok:
+        error_msg = result.get("error") or "未知错误"
+        st.session_state.passkey_registration_state = None
+        st.session_state.passkey_auth_state = None
+        auth_log("passkey_client_error", mode=mode, error=error_msg)
+        st.error(f"Face ID 操作失败：{error_msg}")
+        return
+
+    payload = result.get("payload") or {}
+    if mode == "register":
+        success, message = finalize_passkey_registration(payload)
+        if success:
+            st.success(message)
+        else:
+            st.error(message)
+        return
+
+    if mode == "authenticate":
+        success, message, username = finalize_passkey_authentication(payload)
+        if not success:
+            st.error(message)
+            return
+        create_login_state(username)
+        st.toast("✅ Face ID 登录成功", icon="✅")
+        st.rerun()
+
+def render_pending_passkey_action():
+    action = st.session_state.passkey_pending_action
+    if not action:
+        return
+    st.session_state.passkey_pending_action = None
+
+    mode = action.get("mode")
+    options = action.get("options") or {}
+    query_key = PASSKEY_RESULT_QUERY_KEY
+    payload_json = json.dumps(options, ensure_ascii=False)
+
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            const mode = {json.dumps(mode)};
+            const options = {payload_json};
+            const queryKey = {json.dumps(query_key)};
+
+            function toBytes(value) {{
+                if (value instanceof Uint8Array) return value;
+                if (value instanceof ArrayBuffer) return new Uint8Array(value);
+                if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+                return new Uint8Array();
+            }}
+
+            function encodeBase64Url(value) {{
+                const bytes = toBytes(value);
+                let binary = "";
+                for (let i = 0; i < bytes.length; i += 1) {{
+                    binary += String.fromCharCode(bytes[i]);
+                }}
+                return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+            }}
+
+            function decodeBase64Url(value) {{
+                const padded = value + "=".repeat((4 - (value.length % 4)) % 4);
+                const base64 = padded.replace(/-/g, "+").replace(/_/g, "/");
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i += 1) {{
+                    bytes[i] = binary.charCodeAt(i);
+                }}
+                return bytes.buffer;
+            }}
+
+            function encodeJson(obj) {{
+                return encodeBase64Url(new TextEncoder().encode(JSON.stringify(obj)));
+            }}
+
+            function normalizeCreateOptions(raw) {{
+                const next = {{ ...raw }};
+                next.challenge = decodeBase64Url(next.challenge);
+                if (next.user && next.user.id) {{
+                    next.user = {{ ...next.user, id: decodeBase64Url(next.user.id) }};
+                }}
+                if (Array.isArray(next.excludeCredentials)) {{
+                    next.excludeCredentials = next.excludeCredentials.map((item) => ({{ ...item, id: decodeBase64Url(item.id) }}));
+                }}
+                return next;
+            }}
+
+            function normalizeGetOptions(raw) {{
+                const next = {{ ...raw }};
+                next.challenge = decodeBase64Url(next.challenge);
+                if (Array.isArray(next.allowCredentials)) {{
+                    next.allowCredentials = next.allowCredentials.map((item) => ({{ ...item, id: decodeBase64Url(item.id) }}));
+                }}
+                return next;
+            }}
+
+            function serializeRegistrationCredential(credential) {{
+                const response = credential.response;
+                return {{
+                    id: credential.id,
+                    rawId: encodeBase64Url(credential.rawId),
+                    type: credential.type,
+                    response: {{
+                        clientDataJSON: encodeBase64Url(response.clientDataJSON),
+                        attestationObject: encodeBase64Url(response.attestationObject),
+                        transports: typeof response.getTransports === "function" ? response.getTransports() : [],
+                    }},
+                    clientExtensionResults: typeof credential.getClientExtensionResults === "function"
+                        ? credential.getClientExtensionResults()
+                        : {{}},
+                }};
+            }}
+
+            function serializeAuthenticationCredential(credential) {{
+                const response = credential.response;
+                return {{
+                    id: credential.id,
+                    rawId: encodeBase64Url(credential.rawId),
+                    type: credential.type,
+                    response: {{
+                        authenticatorData: encodeBase64Url(response.authenticatorData),
+                        clientDataJSON: encodeBase64Url(response.clientDataJSON),
+                        signature: encodeBase64Url(response.signature),
+                        userHandle: response.userHandle ? encodeBase64Url(response.userHandle) : null,
+                    }},
+                    clientExtensionResults: typeof credential.getClientExtensionResults === "function"
+                        ? credential.getClientExtensionResults()
+                        : {{}},
+                }};
+            }}
+
+            function sendResult(result) {{
+                let hostWindow = window;
+                if (window.parent && window.parent !== window) {{
+                    hostWindow = window.parent;
+                }}
+                const url = new URL(hostWindow.location.href);
+                url.searchParams.set(queryKey, encodeJson(result));
+                hostWindow.location.replace(url.toString());
+            }}
+
+            (async () => {{
+                if (!window.PublicKeyCredential) {{
+                    sendResult({{ mode, ok: false, error: "当前浏览器不支持 Passkey/Face ID" }});
+                    return;
+                }}
+                try {{
+                    if (mode === "register") {{
+                        const credential = await navigator.credentials.create({{
+                            publicKey: normalizeCreateOptions(options),
+                        }});
+                        sendResult({{
+                            mode,
+                            ok: true,
+                            payload: serializeRegistrationCredential(credential),
+                        }});
+                        return;
+                    }}
+                    const credential = await navigator.credentials.get({{
+                        publicKey: normalizeGetOptions(options),
+                    }});
+                    sendResult({{
+                        mode,
+                        ok: true,
+                        payload: serializeAuthenticationCredential(credential),
+                    }});
+                }} catch (error) {{
+                    sendResult({{
+                        mode,
+                        ok: false,
+                        error: error && error.message ? error.message : String(error),
+                    }});
+                }}
+            }})();
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+
 # ------------------------------
 # 刷新后自动恢复登录
 # ------------------------------
@@ -493,6 +1041,8 @@ if st.session_state.pending_auth_token:
 if st.session_state.clear_auth_client:
     auth_log("bridge_clear_client_done")
     st.session_state.clear_auth_client = False
+
+handle_passkey_query_result()
 
 if not st.session_state.logged_in:
     restored_user = restore_login_session()
@@ -518,6 +1068,8 @@ if not st.session_state.logged_in:
         st.session_state.logged_in = True
         st.session_state.username = restored_user
         auth_log("restore_login_ok", username=restored_user)
+
+render_pending_passkey_action()
 
 # ------------------------------
 # 用户注册/登录
@@ -628,19 +1180,23 @@ if not st.session_state.logged_in:
             password = st.text_input("密码", type="password")
             if st.form_submit_button("🚀 登录", type="primary"):
                 if login_user(username, password):
-                    token = make_auth_token(username)
-                    st.session_state.logged_in = True
-                    st.session_state.username = username
-                    st.session_state.pending_auth_token = token
-                    st.session_state.clear_auth_client = False
-                    set_auth_token_to_query(token)
-                    upsert_login_session(username)
+                    create_login_state(username)
                     auth_log("login_ok", username=username)
                     st.success(f"欢迎回来，{username}！")
                     st.rerun()
                 else:
                     auth_log("login_failed", username=username)
                     st.error("用户名或密码错误")
+
+        st.divider()
+        st.caption("📱 iPhone 可直接用 Face ID 登录（先用密码登录一次后启用）")
+        if st.button("使用 Face ID 登录", key="passkey_auth_button", type="primary"):
+            ok, msg = start_passkey_authentication()
+            if ok:
+                st.info(msg)
+                st.rerun()
+            else:
+                st.error(msg)
 
     with tab2:
         with st.form("register_form"):
@@ -672,11 +1228,42 @@ else:
             st.session_state.username = None
             st.session_state.pending_auth_token = None
             st.session_state.clear_auth_client = True
+            st.session_state.passkey_pending_action = None
+            st.session_state.passkey_registration_state = None
+            st.session_state.passkey_auth_state = None
             clear_auth_token_from_query()
             clear_login_session()
             st.rerun()
 
         st.divider()
+        with st.expander("🔐 Face ID 登录", expanded=False):
+            if WEBAUTHN_AVAILABLE:
+                st.caption("在这台设备启用后，可在登录页直接刷脸进入。")
+                if st.button("在当前设备启用 Face ID", key="passkey_register_btn", type="primary"):
+                    ok, msg = start_passkey_registration(current_user)
+                    if ok:
+                        st.info(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+                passkeys = list_user_passkeys(current_user)
+                st.caption(f"已绑定 Passkey 数量：{len(passkeys)}")
+                for item in passkeys:
+                    short_id = item["credential_id"][:16] + "..."
+                    st.write(f"设备凭证：`{short_id}`")
+                    created_at = item["created_at"] or "-"
+                    last_used_at = item["last_used_at"] or "-"
+                    st.caption(f"创建时间：{created_at} | 最近使用：{last_used_at}")
+                    if st.button("删除此凭证", key=f"delete_passkey_{item['id']}"):
+                        delete_user_passkey(current_user, item["id"])
+                        st.success("已删除该 Face ID 凭证")
+                        st.rerun()
+                    st.divider()
+            else:
+                st.error(f"缺少 webauthn 依赖：{WEBAUTHN_IMPORT_ERROR}")
+                st.caption("先安装依赖后即可启用 Face ID：`pip install webauthn`")
+
         st.subheader("🔗 共享管理")
         invited = get_my_invited_users(current_user)
         if invited:
