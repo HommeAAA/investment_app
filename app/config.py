@@ -23,6 +23,8 @@ def _normalize_database_url(url: str) -> str:
     value = str(url or "").strip()
     if value.startswith("postgres://"):
         return "postgresql+psycopg://" + value[len("postgres://") :]
+    if value.startswith("postgresql://"):
+        return "postgresql+psycopg://" + value[len("postgresql://") :]
     return value
 
 
@@ -97,15 +99,22 @@ def _read_setting(name: str, default: str = "") -> str:
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    import platform
+    system = platform.system()
+    if system == "Windows":
+        default_sqlite_path = "sqlite:///investment_app_dev.db"
+    else:
+        default_sqlite_path = "sqlite:////tmp/investment_app_dev.db"
+    
     return Settings(
         app_name="全球资产管理系统 Pro",
         database_url=_read_database_url(
             "postgresql+psycopg://postgres:postgres@localhost:5432/investment_app",
         ),
         sqlite_fallback_url=_read_setting(
-            "SQLITE_FALLBACK_URL", "sqlite:////tmp/investment_app_dev.db"
+            "SQLITE_FALLBACK_URL", default_sqlite_path
         ),
-        allow_sqlite_fallback=_read_setting("ALLOW_SQLITE_FALLBACK", "0") == "1",
+        allow_sqlite_fallback=_read_setting("ALLOW_SQLITE_FALLBACK", "1") == "1",
         auth_secret=_read_setting("APP_AUTH_SECRET", "change-me-in-production"),
         auth_max_age_seconds=int(_read_setting("APP_AUTH_MAX_AGE", str(7 * 24 * 60 * 60))),
         admin_username=_read_setting("APP_ADMIN_USERNAME", "admin"),

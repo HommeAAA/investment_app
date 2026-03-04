@@ -44,10 +44,25 @@ def get_engine():
         logger.info("Using database: %s", settings.database_url)
         _active_database_url = settings.database_url
     except (NoSuchModuleError, OperationalError, ModuleNotFoundError) as exc:
-        raise DatabaseConnectionError(
-            "PostgreSQL connection failed. Configure a valid DATABASE_URL "
-            "(env or Streamlit Secrets), and verify host/port/user/password/database/SSL."
-        ) from exc
+        if settings.allow_sqlite_fallback:
+            logger.warning("PostgreSQL connection failed, falling back to SQLite: %s", exc)
+            try:
+                _engine = _connectable_engine(settings.sqlite_fallback_url)
+                with _engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                logger.info("Using SQLite fallback: %s", settings.sqlite_fallback_url)
+                _active_database_url = settings.sqlite_fallback_url
+            except Exception as sqlite_exc:
+                raise DatabaseConnectionError(
+                    "Both PostgreSQL and SQLite connections failed. "
+                    "Configure a valid DATABASE_URL or check SQLite fallback configuration."
+                ) from sqlite_exc
+        else:
+            raise DatabaseConnectionError(
+                "PostgreSQL connection failed. Configure a valid DATABASE_URL "
+                "(env or Streamlit Secrets), and verify host/port/user/password/database/SSL, "
+                "or enable SQLite fallback with ALLOW_SQLITE_FALLBACK=1."
+            ) from exc
 
     SessionLocal = scoped_session(
         sessionmaker(bind=_engine, autoflush=False, autocommit=False, expire_on_commit=False)
@@ -76,9 +91,18 @@ def session_scope() -> Iterator[Session]:
 
 def init_db() -> None:
     from . import models  # noqa: F401
+    from .models import Investment
+    from .repositories import SymbolRepository
+    from sqlalchemy import select
 
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
+    
+    with session_scope() as session:
+        rows = session.scalars(select(Investment)).all()
+        payload = [(r.market, r.symbol_code, r.symbol_name) for r in rows if r.symbol_code and r.symbol_name]
+        if payload:
+            SymbolRepository.upsert_many(session, payload, source="init_db")
 
 
 def get_database_status() -> dict[str, str]:

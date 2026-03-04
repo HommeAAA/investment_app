@@ -355,10 +355,14 @@ class SymbolRepository:
         kw = str(keyword).strip()
         if not kw:
             return []
+        
         kw_upper = kw.upper()
         like_code = f"%{kw_upper}%"
         like_name = f"%{kw}%"
-        stmt = (
+        
+        results = {}
+        
+        cache_stmt = (
             select(SymbolCache)
             .where(
                 or_(
@@ -367,9 +371,36 @@ class SymbolRepository:
                 )
             )
             .order_by(desc(SymbolCache.updated_at))
-            .limit(limit)
         )
-        return list(session.scalars(stmt))
+        for item in session.scalars(cache_stmt):
+            key = (item.market, item.symbol_code)
+            if key not in results:
+                results[key] = item
+        
+        investment_stmt = (
+            select(Investment)
+            .where(
+                or_(
+                    func.upper(Investment.symbol_code).like(like_code),
+                    Investment.symbol_name.like(like_name),
+                )
+            )
+            .order_by(desc(Investment.update_time))
+        )
+        for item in session.scalars(investment_stmt):
+            key = (item.market, item.symbol_code)
+            if key not in results:
+                cache_item = SymbolCache(
+                    market=item.market,
+                    symbol_code=item.symbol_code,
+                    symbol_name=item.symbol_name,
+                    source="investment_search",
+                    updated_at=datetime.utcnow(),
+                )
+                results[key] = cache_item
+        
+        sorted_results = sorted(results.values(), key=lambda x: x.updated_at, reverse=True)
+        return sorted_results[:limit]
 
 
 class MetaRepository:
