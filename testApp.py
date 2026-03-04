@@ -120,15 +120,25 @@ def render_ui_style():
         }
 
         /* 解决顶部空白/遮挡问题 */
-        [data-testid="stHeader"] {
-            height: 0;
-            background: transparent;
+        header[data-testid="stHeader"],
+        [data-testid="stAppHeader"],
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"] {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            max-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
         }
-        [data-testid="stToolbar"] {
-            display: none;
+        .stApp [data-testid="stAppViewContainer"] > .main,
+        .stApp [data-testid="stAppViewContainer"] > .main > div {
+            padding-top: 0 !important;
+            margin-top: 0 !important;
         }
         .block-container {
-            padding-top: 0.45rem;
+            padding-top: 0.05rem !important;
             padding-bottom: calc(5rem + env(safe-area-inset-bottom));
             max-width: 1180px;
         }
@@ -231,6 +241,69 @@ def render_ui_style():
                 border: 1px solid #334866;
                 border-radius: 14px;
             }
+        }
+
+        /* 兼容 Streamlit 手动切换 Dark 主题 */
+        html[data-theme="dark"] [data-testid="stAppViewContainer"],
+        body[data-theme="dark"] [data-testid="stAppViewContainer"],
+        [data-theme="dark"] [data-testid="stAppViewContainer"] {
+            background:
+              radial-gradient(900px 360px at 0% -10%, #13243f 0%, transparent 62%),
+              radial-gradient(820px 320px at 100% 0%, #123336 0%, transparent 58%),
+              #0b1220 !important;
+            color: #e6eef8 !important;
+        }
+
+        html[data-theme="dark"] .stApp,
+        body[data-theme="dark"] .stApp,
+        [data-theme="dark"] .stApp {
+            color: #e6eef8 !important;
+        }
+
+        html[data-theme="dark"] h1,
+        html[data-theme="dark"] h2,
+        html[data-theme="dark"] h3,
+        html[data-theme="dark"] p,
+        html[data-theme="dark"] label,
+        html[data-theme="dark"] span,
+        html[data-theme="dark"] [data-testid="stMarkdownContainer"],
+        body[data-theme="dark"] h1,
+        body[data-theme="dark"] h2,
+        body[data-theme="dark"] h3,
+        body[data-theme="dark"] p,
+        body[data-theme="dark"] label,
+        body[data-theme="dark"] span,
+        body[data-theme="dark"] [data-testid="stMarkdownContainer"],
+        [data-theme="dark"] h1,
+        [data-theme="dark"] h2,
+        [data-theme="dark"] h3,
+        [data-theme="dark"] p,
+        [data-theme="dark"] label,
+        [data-theme="dark"] span,
+        [data-theme="dark"] [data-testid="stMarkdownContainer"] {
+            color: #e6eef8 !important;
+        }
+
+        html[data-theme="dark"] [data-testid="stExpander"],
+        html[data-theme="dark"] [data-testid="stMetric"],
+        body[data-theme="dark"] [data-testid="stExpander"],
+        body[data-theme="dark"] [data-testid="stMetric"],
+        [data-theme="dark"] [data-testid="stExpander"],
+        [data-theme="dark"] [data-testid="stMetric"] {
+            background: #111b2e !important;
+            border-color: #24344e !important;
+            box-shadow: none !important;
+        }
+
+        html[data-theme="dark"] div[data-baseweb="input"] > div,
+        html[data-theme="dark"] div[data-baseweb="select"] > div,
+        body[data-theme="dark"] div[data-baseweb="input"] > div,
+        body[data-theme="dark"] div[data-baseweb="select"] > div,
+        [data-theme="dark"] div[data-baseweb="input"] > div,
+        [data-theme="dark"] div[data-baseweb="select"] > div {
+            background: #0f1727 !important;
+            border-color: #334866 !important;
+            color: #e6eef8 !important;
         }
         </style>
         """,
@@ -1353,8 +1426,6 @@ if not st.session_state.logged_in:
         st.session_state.username = restored_user
         auth_log("restore_login_ok", username=restored_user)
 
-render_pending_passkey_action()
-
 # ------------------------------
 # 用户注册/登录
 # ------------------------------
@@ -1478,7 +1549,8 @@ if not st.session_state.logged_in:
             ok, msg = start_passkey_authentication()
             if ok:
                 st.info(msg)
-                st.rerun()
+                render_pending_passkey_action()
+                st.stop()
             else:
                 st.error(msg)
 
@@ -1526,7 +1598,8 @@ else:
                     ok, msg = start_passkey_registration(current_user)
                     if ok:
                         st.info(msg)
-                        st.rerun()
+                        render_pending_passkey_action()
+                        st.stop()
                     else:
                         st.error(msg)
 
@@ -2413,6 +2486,6 @@ else:
         if logs_df.empty:
             st.caption("暂无日志记录")
         else:
-            st.dataframe(logs_df, width='stretch', hide_index=True)
+            st.dataframe(logs_df, use_container_width=True, hide_index=True)
 
     st.caption(f"全球资产管理系统 Pro Ultimate v2.6 | 刷新不登出已修复")
