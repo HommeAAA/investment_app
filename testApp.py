@@ -177,6 +177,11 @@ def render_ui_style():
         .stButton > button {
             border-radius: 12px;
             min-height: 44px;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+        }
+
+        .stButton > button:active {
+            transform: scale(0.985);
         }
 
         .stButton > button[data-testid="baseButton-primary"] {
@@ -188,6 +193,27 @@ def render_ui_style():
 
         [data-testid="stCaptionContainer"] {
             color: var(--app-subtext);
+        }
+
+        [data-testid="stSidebar"] > div:first-child {
+            background: linear-gradient(180deg, rgba(231,241,252,0.92) 0%, rgba(243,248,252,0.9) 100%);
+            backdrop-filter: blur(12px);
+            border-right: 1px solid #d3e2ef;
+        }
+
+        @media (max-width: 768px) {
+            .block-container {
+                padding-left: 0.72rem !important;
+                padding-right: 0.72rem !important;
+                padding-bottom: calc(6.2rem + env(safe-area-inset-bottom));
+            }
+            [data-testid="stExpander"] {
+                border-radius: 14px;
+            }
+            .stButton > button {
+                width: 100%;
+                min-height: 46px;
+            }
         }
 
         @media (prefers-color-scheme: dark) {
@@ -304,6 +330,13 @@ def render_ui_style():
             background: #0f1727 !important;
             border-color: #334866 !important;
             color: #e6eef8 !important;
+        }
+
+        html[data-theme="dark"] [data-testid="stSidebar"] > div:first-child,
+        body[data-theme="dark"] [data-testid="stSidebar"] > div:first-child,
+        [data-theme="dark"] [data-testid="stSidebar"] > div:first-child {
+            background: linear-gradient(180deg, rgba(15,23,39,0.95) 0%, rgba(11,18,32,0.94) 100%) !important;
+            border-right: 1px solid #24344e !important;
         }
         </style>
         """,
@@ -2250,9 +2283,53 @@ else:
         query = f"SELECT * FROM investments WHERE user IN ({placeholders}) OR user IS NULL"
         return pd.read_sql_query(query, conn, params=accessible)
 
-    def get_investor_list():
-        df = read_data(current_user)
-        return sorted(df["investor"].dropna().unique().tolist()) if not df.empty else []
+    def get_investor_list(include_shared=True):
+        if include_shared:
+            df = read_data(current_user)
+        else:
+            df = pd.read_sql_query(
+                "SELECT investor FROM investments WHERE user=?",
+                conn,
+                params=(current_user,)
+            )
+        if df.empty:
+            return []
+        cleaned = [str(x).strip() for x in df["investor"].dropna().tolist() if str(x).strip()]
+        return sorted(list(set(cleaned)))
+
+    def build_investor_options(base_list, default_user):
+        options = []
+        if default_user:
+            options.append(default_user)
+        for name in base_list:
+            if name and name not in options:
+                options.append(name)
+        options.append("新增投资人")
+        return options
+
+    def delete_investor_name(investor_name, replacement_investor):
+        target = str(investor_name or "").strip()
+        replacement = str(replacement_investor or "").strip() or current_user
+        if not target:
+            return 0
+        c.execute("""
+            UPDATE investments
+            SET investor=?, update_time=?
+            WHERE user=? AND investor=?
+        """, (replacement, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), current_user, target))
+        affected = c.rowcount if c.rowcount is not None else 0
+        conn.commit()
+        if affected > 0:
+            record_operation_log(
+                entity_type="investor_profile",
+                entity_id=0,
+                action="delete",
+                operator=current_user,
+                owner=current_user,
+                before_data={"investor": target},
+                after_data={"investor": replacement, "affected_records": int(affected)}
+            )
+        return int(affected)
 
     def add_data(investor, market, symbol_code, symbol_name, channel, cost_price, quantity):
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2373,16 +2450,14 @@ else:
     # ------------------------------
     with st.expander("➕ 添加投资", expanded=True):
         ensure_symbol_cache_ready()
-        investor_list = get_investor_list()
+        investor_list = get_investor_list(include_shared=False)
         col1, col2 = st.columns(2)
         selected_symbol_name = ""
         with col1:
-            if investor_list:
-                investor = st.selectbox("选择投资人", investor_list + ["新增投资人"])
-                if investor == "新增投资人":
-                    investor = st.text_input("输入新投资人", value=current_user)
-            else:
-                investor = st.text_input("投资人", value=current_user)
+            investor_options = build_investor_options(investor_list, current_user)
+            investor = st.selectbox("选择投资人", investor_options, index=0 if current_user in investor_options else 0)
+            if investor == "新增投资人":
+                investor = st.text_input("输入新投资人", value=current_user).strip() or current_user
             raw_symbol_input = st.text_input("标的代码（支持模糊查询：代码/名称）")
             raw_symbol_input = raw_symbol_input.strip().upper()
             symbol_code = raw_symbol_input
@@ -2430,12 +2505,28 @@ else:
                 st.success("✅ 添加成功")
                 st.rerun()
 
+    with st.expander("🧑‍💼 投资人管理", expanded=False):
+        my_investors = get_investor_list(include_shared=False)
+        if my_investors:
+            del_target = st.selectbox("删除投资人", my_investors, key="investor_delete_target")
+            replacement_options = [current_user] + [x for x in my_investors if x != del_target and x != current_user]
+            replacement = st.selectbox("转移到", replacement_options, key="investor_delete_replacement")
+            st.caption("删除后，该投资人名下记录会转移到上方选择的投资人。")
+            if st.button("删除投资人并转移", key="investor_delete_btn", type="primary"):
+                affected = delete_investor_name(del_target, replacement)
+                if affected > 0:
+                    st.success(f"已删除投资人「{del_target}」，并转移 {affected} 条记录到「{replacement}」")
+                    st.rerun()
+                else:
+                    st.warning("未找到可转移的记录")
+        else:
+            st.caption("暂无可管理的投资人")
+
     # ------------------------------
     # 刷新按钮
     # ------------------------------
     def refresh_prices():
         st.cache_data.clear()
-        st.rerun()
 
     st.button("🔄 刷新行情", on_click=refresh_prices)
 
@@ -2510,10 +2601,8 @@ else:
                 row_is_fund = is_fund_investment(row["market"], row["symbol_code"])
                 col1, col2, col3, col4, col5 = st.columns([1.3, 1, 1, 0.8, 0.8])
                 current_investor = row["investor"] if row["investor"] else current_user
-                investor_candidates = [x for x in get_investor_list() if x]
-                if current_investor not in investor_candidates:
-                    investor_candidates = [current_investor] + investor_candidates
-                investor_options = investor_candidates + ["新增投资人"]
+                investor_candidates = get_investor_list(include_shared=False)
+                investor_options = build_investor_options(investor_candidates + [current_investor], current_user)
                 selected_investor = col1.selectbox(
                     "投资人",
                     investor_options,
@@ -2593,6 +2682,6 @@ else:
         if logs_df.empty:
             st.caption("暂无日志记录")
         else:
-            st.dataframe(logs_df, use_container_width=True, hide_index=True)
+            st.dataframe(logs_df, width='stretch', hide_index=True)
 
     st.caption(f"全球资产管理系统 Pro Ultimate v2.6 | 刷新不登出已修复")
