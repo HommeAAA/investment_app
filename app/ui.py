@@ -617,6 +617,7 @@ def render_pending_passkey_action() -> None:
             const queryKey = {json.dumps(query_key)};
             const triggerBtn = document.getElementById("passkey-trigger-btn");
             const statusEl = document.getElementById("passkey-status");
+            let hasTriggered = false;
 
             function setStatus(text, isError) {{
                 if (!statusEl) return;
@@ -722,6 +723,8 @@ def render_pending_passkey_action() -> None:
             }}
 
             async function runPasskey() {{
+                if (hasTriggered) return;
+                hasTriggered = true;
                 if (!window.PublicKeyCredential) {{
                     sendResult({{ mode, ok: false, error: "当前浏览器不支持 Passkey/Face ID", state: statePayload }});
                     return;
@@ -752,6 +755,7 @@ def render_pending_passkey_action() -> None:
                         state: statePayload,
                     }});
                 }} catch (error) {{
+                    hasTriggered = false;
                     sendResult({{
                         mode,
                         ok: false,
@@ -772,6 +776,19 @@ def render_pending_passkey_action() -> None:
                 setStatus("正在请求 Face ID，请在系统弹窗中确认...", false);
                 runPasskey();
             }});
+
+            setTimeout(function() {{
+                try {{
+                    triggerBtn.disabled = true;
+                    triggerBtn.style.opacity = "0.7";
+                    setStatus("正在自动拉起 Face ID，请在系统弹窗中确认...", false);
+                    runPasskey();
+                }} catch (e) {{
+                    triggerBtn.disabled = false;
+                    triggerBtn.style.opacity = "1";
+                    setStatus("自动拉起失败，请点击按钮重试。", true);
+                }}
+            }}, 120);
         }})();
         </script>
         """,
@@ -788,6 +805,18 @@ def render_theme() -> None:
         """
         <style>
         :root {
+            --app-bg: #f3f7fb;
+            --app-card: #ffffff;
+            --app-border: #d5e4f0;
+            --app-text: #122b46;
+            --app-sub: #5a718a;
+            --app-accent: #0f766e;
+            --nav-bg: rgba(255,255,255,0.92);
+        }
+
+        html[data-app-theme="light"],
+        body[data-app-theme="light"],
+        [data-app-theme="light"] {
             --app-bg: #f3f7fb;
             --app-card: #ffffff;
             --app-border: #d5e4f0;
