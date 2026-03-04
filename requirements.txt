@@ -4,5 +4,4 @@ sqlalchemy
 yfinance
 plotly
 numpy
-hashlib
 bcrypt
