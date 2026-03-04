@@ -26,6 +26,7 @@ ARCHITECTURE.md
 scripts/cloudflare_tunnel_setup.sh
 scripts/start_streamlit.sh
 scripts/start_tunnel.sh
+.streamlit/
 
 # OS
 .DS_Store

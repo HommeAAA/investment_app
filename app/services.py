@@ -177,8 +177,21 @@ class AuthService:
 
 
 class MarketService:
+    _price_cache: dict[str, tuple[float, float]] = {}
+    _fx_cache: tuple[dict[str, float], float] = ({}, 0)
+    
+    def __init__(self) -> None:
+        pass
+    
     @staticmethod
-    def _yf():
+    def _get_cache_time() -> float:
+        import time
+        return time.time()
+    
+    @staticmethod
+    def _is_cache_valid(cached_time: float, max_age_seconds: float = 60) -> bool:
+        import time
+        return (time.time() - cached_time) < max_age_seconds
         try:
             import yfinance as yf  # type: ignore
 
@@ -249,18 +262,43 @@ class MarketService:
         except Exception:
             return code
 
-    def get_prices(self, rows: list[Investment]) -> dict[str, float]:
+    def get_prices(self, rows: list[Investment], use_cache: bool = True) -> dict[str, float]:
         prices: dict[str, float] = {}
-        us_codes = sorted({r.symbol_code for r in rows if r.market == "美股"})
-        crypto_codes = sorted({r.symbol_code for r in rows if r.market == "Crypto"})
-
-        prices.update(self._us_prices(us_codes))
-        prices.update(self._crypto_prices(crypto_codes))
-
+        
+        unique_codes: dict[str, str] = {}
         for row in rows:
-            if row.market == "A股":
-                prices[row.symbol_code] = self._a_price(row.symbol_code)
-        return prices
+            if row.symbol_code not in unique_codes:
+                unique_codes[row.symbol_code] = row.market
+        
+        if use_cache:
+            for code, (cached_price, cached_time) in list(self._price_cache.items()):
+                if code in unique_codes and self._is_cache_valid(cached_time, max_age_seconds=60):
+                    prices[code] = cached_price
+                    del unique_codes[code]
+        
+        if not unique_codes:
+            return {r.symbol_code: prices.get(r.symbol_code, 0.0) for r in rows}
+        
+        us_codes = sorted({code for code, market in unique_codes.items() if market == "美股"})
+        crypto_codes = sorted({code for code, market in unique_codes.items() if market == "Crypto"})
+        
+        new_prices = {}
+        if us_codes:
+            new_prices.update(self._us_prices(us_codes))
+        if crypto_codes:
+            new_prices.update(self._crypto_prices(crypto_codes))
+        
+        a_stock_codes = [code for code, market in unique_codes.items() if market == "A股"]
+        if a_stock_codes:
+            a_prices = self._a_prices_batch(a_stock_codes)
+            new_prices.update(a_prices)
+        
+        for code, price in new_prices.items():
+            self._price_cache[code] = (price, self._get_cache_time())
+        
+        prices.update(new_prices)
+        
+        return {r.symbol_code: prices.get(r.symbol_code, 0.0) for r in rows}
 
     def _a_price(self, code: str) -> float:
         try:
@@ -286,6 +324,42 @@ class MarketService:
         except Exception:
             pass
         return 0.0
+
+    def _a_prices_batch(self, codes: list[str]) -> dict[str, float]:
+        if not codes:
+            return {}
+        
+        result = {}
+        secids = []
+        code_map = {}
+        
+        for code in codes:
+            secid = ("1." if code.startswith(("6", "5", "9")) else "0.") + code
+            secids.append(secid)
+            code_map[secid] = code
+        
+        try:
+            r = requests.get(
+                "https://push2.eastmoney.com/api/qt/stock/get",
+                params={"fltt": 2, "fields": "f43,f58", "secids": ",".join(secids)},
+                timeout=6,
+            )
+            data = r.json()
+            if data.get("data"):
+                for secid, info in data["data"].items():
+                    code = code_map.get(secid)
+                    if code and info:
+                        f43 = info.get("f43")
+                        if f43:
+                            result[code] = float(f43) / 100
+        except Exception:
+            pass
+        
+        for code in codes:
+            if code not in result:
+                result[code] = self._a_price(code)
+        
+        return result
 
     def _us_prices(self, codes: list[str]) -> dict[str, float]:
         if not codes:
@@ -339,6 +413,10 @@ class MarketService:
         return out
 
     def fx_rates(self) -> dict[str, float]:
+        cached_rates, cached_time = self._fx_cache
+        if cached_rates and self._is_cache_valid(cached_time, max_age_seconds=300):
+            return cached_rates.copy()
+        
         rates = {"USD": 1.0, "CNY": 7.2}
         try:
             r = requests.get("https://open.er-api.com/v6/latest/USD", timeout=6)
@@ -347,6 +425,8 @@ class MarketService:
                 rates["CNY"] = float(data.get("rates", {}).get("CNY", 7.2))
         except Exception:
             pass
+        
+        self._fx_cache = (rates, self._get_cache_time())
         return rates
 
     @staticmethod
