@@ -7,7 +7,7 @@ import requests
 import os
 import logging
 import bcrypt
-import hashlib  # ← 新增：用于旧密码自动迁移
+import hashlib
 
 # ------------------------------
 # 基础设置
@@ -19,7 +19,6 @@ os.environ.pop("HTTPS_PROXY", None)
 st.set_page_config(page_title="全球资产管理系统 Pro Ultimate", layout="wide", page_icon="🌍")
 st.title("🌍 全球资产管理系统 Pro Ultimate")
 
-
 # ------------------------------
 # 数据库连接
 # ------------------------------
@@ -28,134 +27,82 @@ def get_db_connection():
     conn = sqlite3.connect("testApp.db", check_same_thread=False)
     return conn
 
-
 conn = get_db_connection()
 c = conn.cursor()
 
 # ------------------------------
-# 密码函数（支持旧密码自动迁移）← 关键修复
+# 密码函数（支持旧密码自动迁移）
 # ------------------------------
 def hash_password(password):
-    """生成 bcrypt 哈希"""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-
 def is_legacy_hash(password_hash):
-    """判断是否为旧的 sha256 哈希（64位十六进制）"""
     if len(password_hash) != 64:
         return False
     return all(c in '0123456789abcdefABCDEF' for c in password_hash)
 
-
 def verify_password(password, stored_hash):
-    """验证密码，支持旧sha256自动迁移到bcrypt"""
     if is_legacy_hash(stored_hash):
-        # 用旧方式验证
         legacy_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
         if legacy_hash == stored_hash:
-            return True, True  # 验证成功，需要升级
+            return True, True   # 需要升级
         return False, False
     else:
-        # 正常 bcrypt 验证
         try:
-            result = bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
-            return result, False
-        except Exception:
+            return bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')), False
+        except:
             return False, False
 
 # ------------------------------
-# 数据库初始化
+# 数据库初始化（已修复：标准SQL写法）
 # ------------------------------
 def init_database():
-    # 用户表
+    # === 用户表（干净写法）===
     c.execute("""
-              CREATE TABLE IF NOT EXISTS users
-              (
-                  id
-                  INTEGER
-                  PRIMARY
-                  KEY
-                  AUTOINCREMENT,
-                  username
-                  TEXT
-                  UNIQUE
-                  NOT
-                  NULL,
-                  password_hash
-                  TEXT
-                  NOT
-                  NULL,
-                  created_at
-                  TEXT
-              )
-              """)
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT
+        )
+    """)
 
-    # 投资表
+    # === 投资表（干净写法）===
     c.execute("""
-              CREATE TABLE IF NOT EXISTS investments
-              (
-                  id
-                  INTEGER
-                  PRIMARY
-                  KEY
-                  AUTOINCREMENT,
-                  investor
-                  TEXT,
-                  market
-                  TEXT,
-                  symbol_code
-                  TEXT,
-                  symbol_name
-                  TEXT,
-                  channel
-                  TEXT,
-                  cost_price
-                  REAL,
-                  quantity
-                  REAL,
-                  update_time
-                  TEXT,
-                  user
-                  TEXT
-              )
-              """)
+        CREATE TABLE IF NOT EXISTS investments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            investor TEXT,
+            market TEXT,
+            symbol_code TEXT,
+            symbol_name TEXT,
+            channel TEXT,
+            cost_price REAL,
+            quantity REAL,
+            update_time TEXT,
+            user TEXT
+        )
+    """)
 
-    # 共享表
+    # === 共享表（干净写法）===
     c.execute("""
-              CREATE TABLE IF NOT EXISTS shares
-              (
-                  id
-                  INTEGER
-                  PRIMARY
-                  KEY
-                  AUTOINCREMENT,
-                  owner
-                  TEXT
-                  NOT
-                  NULL,
-                  shared_with
-                  TEXT
-                  NOT
-                  NULL,
-                  created_at
-                  TEXT,
-                  UNIQUE
-              (
-                  owner,
-                  shared_with
-              )
-                  )
-              """)
+        CREATE TABLE IF NOT EXISTS shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner TEXT NOT NULL,
+            shared_with TEXT NOT NULL,
+            created_at TEXT,
+            UNIQUE(owner, shared_with)
+        )
+    """)
     conn.commit()
 
-    # 自动升级旧表（兼容老数据）
+    # 自动升级旧投资表（兼容老数据）
     c.execute("PRAGMA table_info(investments)")
     cols = [row[1] for row in c.fetchall()]
     if "user" not in cols:
         c.execute("ALTER TABLE investments ADD COLUMN user TEXT")
         conn.commit()
 
-    # 创建默认管理员账号（bcrypt）
+    # 创建默认管理员账号
     c.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
     if c.fetchone()[0] == 0:
         hashed = hash_password("admin123")
@@ -164,9 +111,11 @@ def init_database():
         conn.commit()
         st.toast("✅ 默认管理员账号已创建：**admin / admin123**", icon="🎉")
 
-
 init_database()
 
+# ------------------------------
+# 用户注册/登录
+# ------------------------------
 def register_user(username, password):
     try:
         hashed = hash_password(password)
@@ -176,7 +125,6 @@ def register_user(username, password):
         return True, "注册成功！"
     except sqlite3.IntegrityError:
         return False, "用户名已存在"
-
 
 def login_user(username, password):
     c.execute("SELECT password_hash FROM users WHERE username=?", (username,))
@@ -188,17 +136,15 @@ def login_user(username, password):
     is_valid, needs_upgrade = verify_password(password, stored_hash)
 
     if is_valid and needs_upgrade:
-        # 自动升级为 bcrypt
         new_hash = hash_password(password)
         c.execute("UPDATE users SET password_hash=? WHERE username=?", (new_hash, username))
         conn.commit()
-        st.toast("🔒 密码已自动升级为更安全的 bcrypt 加密格式", icon="✅")
+        st.toast("🔒 密码已自动升级为 bcrypt 加密", icon="✅")
 
     return is_valid
 
-
 # ------------------------------
-# 共享功能（保持不变）
+# 共享功能
 # ------------------------------
 def invite_user(owner, shared_with):
     if owner == shared_with:
@@ -210,36 +156,29 @@ def invite_user(owner, shared_with):
         c.execute("INSERT INTO shares (owner, shared_with, created_at) VALUES (?, ?, ?)",
                   (owner, shared_with, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
-        return True, f"✅ 已成功邀请 {shared_with}"
+        return True, f"✅ 已邀请 {shared_with}"
     except sqlite3.IntegrityError:
         return False, "已邀请过该用户"
-
 
 def revoke_share(owner, shared_with):
     c.execute("DELETE FROM shares WHERE owner=? AND shared_with=?", (owner, shared_with))
     conn.commit()
 
-
 def get_shared_owners(current_user):
     c.execute("SELECT DISTINCT owner FROM shares WHERE shared_with=?", (current_user,))
     return [row[0] for row in c.fetchall()]
-
 
 def get_my_invited_users(owner):
     c.execute("SELECT shared_with FROM shares WHERE owner=?", (owner,))
     return [row[0] for row in c.fetchall()]
 
-
 # ------------------------------
-# 会话状态
+# 会话状态 + 登录/注册页面
 # ------------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
 
-# ------------------------------
-# 登录/注册页面
-# ------------------------------
 if not st.session_state.logged_in:
     st.subheader("🔐 请先登录或注册")
     tab1, tab2 = st.tabs(["📥 登录", "📝 注册"])
@@ -275,7 +214,7 @@ else:
     current_user = st.session_state.username
 
     # ------------------------------
-    # 侧边栏
+    # 侧边栏（共享管理）
     # ------------------------------
     with st.sidebar:
         st.success(f"👤 当前用户：**{current_user}**")
@@ -317,9 +256,8 @@ else:
             st.caption("共享给我的人：")
             st.write(", ".join(shared_from))
 
-
     # ------------------------------
-    # 市场识别 & 名称 & 行情（保持不变）
+    # 行情 & 数据函数（保持不变）
     # ------------------------------
     def identify_market(code):
         code = str(code).upper()
@@ -328,7 +266,6 @@ else:
         if code.isdigit() and len(code) == 6:
             return "A股"
         return "美股"
-
 
     @st.cache_data(ttl=3600)
     def get_a_stock_name(code):
@@ -339,7 +276,6 @@ else:
             return r.json()["data"]["f58"]
         except:
             return code
-
 
     @st.cache_data(ttl=3600)
     def get_fund_name(code):
@@ -354,7 +290,6 @@ else:
         except:
             return code
 
-
     @st.cache_data(ttl=3600)
     def get_us_stock_name(code):
         try:
@@ -362,7 +297,6 @@ else:
             return ticker.info.get("shortName", code)
         except:
             return code
-
 
     def get_symbol_name(market, code):
         if market == "A股":
@@ -374,7 +308,6 @@ else:
             return get_us_stock_name(code)
         return code
 
-
     @st.cache_data(ttl=30)
     def get_a_stock_price(code):
         try:
@@ -384,7 +317,6 @@ else:
             return r.json()["data"]["f43"] / 100
         except:
             return 0
-
 
     @st.cache_data(ttl=60)
     def get_fund_nav(code):
@@ -399,7 +331,6 @@ else:
         except:
             pass
         return 0
-
 
     @st.cache_data(ttl=30)
     def get_us_stock_batch_prices(codes):
@@ -429,7 +360,6 @@ else:
                     prices[code] = 0
         return prices
 
-
     @st.cache_data(ttl=20)
     def get_crypto_batch_prices(codes):
         prices = {}
@@ -447,7 +377,6 @@ else:
                 prices[code] = 0
         return prices
 
-
     # ------------------------------
     # 数据操作（支持共享）
     # ------------------------------
@@ -460,21 +389,18 @@ else:
         query = f"SELECT * FROM investments WHERE user IN ({placeholders}) OR user IS NULL"
         return pd.read_sql_query(query, conn, params=accessible)
 
-
     def get_investor_list():
         df = read_data(current_user)
         return sorted(df["investor"].dropna().unique().tolist()) if not df.empty else []
 
-
     def add_data(investor, market, symbol_code, symbol_name, channel, cost_price, quantity):
         c.execute("""
-                  INSERT INTO investments
-                  (investor, market, symbol_code, symbol_name, channel, cost_price, quantity, update_time, user)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                  """, (investor, market, symbol_code, symbol_name, channel, cost_price, quantity,
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"), current_user))
+            INSERT INTO investments 
+            (investor, market, symbol_code, symbol_name, channel, cost_price, quantity, update_time, user)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (investor, market, symbol_code, symbol_name, channel, cost_price, quantity,
+              datetime.now().strftime("%Y-%m-%d %H:%M:%S"), current_user))
         conn.commit()
-
 
     def delete_data(record_id, record_owner):
         if record_owner == current_user:
@@ -483,20 +409,16 @@ else:
             return True
         return False
 
-
     def update_data(record_id, record_owner, cost_price, quantity):
         if record_owner == current_user:
             c.execute("""
-                      UPDATE investments
-                      SET cost_price=?,
-                          quantity=?,
-                          update_time=?
-                      WHERE id = ?
-                      """, (cost_price, quantity, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), record_id))
+                UPDATE investments
+                SET cost_price=?, quantity=?, update_time=?
+                WHERE id = ?
+            """, (cost_price, quantity, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), record_id))
             conn.commit()
             return True
         return False
-
 
     # ------------------------------
     # 添加投资
@@ -526,7 +448,6 @@ else:
                 st.success("✅ 添加成功")
                 st.rerun()
 
-
     # ------------------------------
     # 刷新按钮
     # ------------------------------
@@ -534,11 +455,10 @@ else:
         st.cache_data.clear()
         st.rerun()
 
-
     st.button("🔄 刷新行情", on_click=refresh_prices)
 
     # ------------------------------
-    # 投资明细 & 汇总（支持共享）
+    # 投资明细 & 汇总
     # ------------------------------
     st.subheader("📋 投资明细")
     df = read_data(current_user)
@@ -605,4 +525,4 @@ else:
     else:
         st.info("暂无数据，快去添加吧！")
 
-    st.caption(f"全球资产管理系统 Pro Ultimate v2.2 | bcrypt + 自动迁移 + 共享功能")
+    st.caption(f"全球资产管理系统 Pro Ultimate v2.3 | bcrypt + 共享功能")
