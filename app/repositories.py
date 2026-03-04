@@ -360,7 +360,8 @@ class SymbolRepository:
         like_code = f"%{kw_upper}%"
         like_name = f"%{kw}%"
         
-        results = {}
+        results = []
+        seen = set()
         
         cache_stmt = (
             select(SymbolCache)
@@ -374,33 +375,39 @@ class SymbolRepository:
         )
         for item in session.scalars(cache_stmt):
             key = (item.market, item.symbol_code)
-            if key not in results:
-                results[key] = item
+            if key not in seen:
+                seen.add(key)
+                results.append(item)
+                if len(results) &gt;= limit:
+                    break
         
-        investment_stmt = (
-            select(Investment)
-            .where(
-                or_(
-                    func.upper(Investment.symbol_code).like(like_code),
-                    Investment.symbol_name.like(like_name),
+        if len(results) &lt; limit:
+            investment_stmt = (
+                select(Investment)
+                .where(
+                    or_(
+                        func.upper(Investment.symbol_code).like(like_code),
+                        Investment.symbol_name.like(like_name),
+                    )
                 )
+                .order_by(desc(Investment.update_time))
             )
-            .order_by(desc(Investment.update_time))
-        )
-        for item in session.scalars(investment_stmt):
-            key = (item.market, item.symbol_code)
-            if key not in results:
-                cache_item = SymbolCache(
-                    market=item.market,
-                    symbol_code=item.symbol_code,
-                    symbol_name=item.symbol_name,
-                    source="investment_search",
-                    updated_at=datetime.utcnow(),
-                )
-                results[key] = cache_item
+            for item in session.scalars(investment_stmt):
+                key = (item.market, item.symbol_code)
+                if key not in seen:
+                    seen.add(key)
+                    cache_item = SymbolCache(
+                        market=item.market,
+                        symbol_code=item.symbol_code,
+                        symbol_name=item.symbol_name,
+                        source="investment_search",
+                        updated_at=datetime.utcnow(),
+                    )
+                    results.append(cache_item)
+                    if len(results) &gt;= limit:
+                        break
         
-        sorted_results = sorted(results.values(), key=lambda x: x.updated_at, reverse=True)
-        return sorted_results[:limit]
+        return results[:limit]
 
 
 class MetaRepository:
