@@ -98,6 +98,169 @@ def auth_log(event, **kwargs):
 st.set_page_config(page_title="全球资产管理系统 Pro Ultimate", layout="wide", page_icon="🌍")
 st.title("🌍 全球资产管理系统 Pro Ultimate")
 
+def render_app_theme():
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Sans+SC:wght@400;500;600;700&display=swap');
+
+    :root {
+        --app-bg: #f3f7fb;
+        --app-panel: rgba(255, 255, 255, 0.92);
+        --app-border: #d5e4f0;
+        --app-text: #13314e;
+        --app-accent: #0f766e;
+        --app-accent-2: #14b8a6;
+    }
+
+    html, body, [class*="css"] {
+        font-family: "Manrope", "IBM Plex Sans SC", "PingFang SC", "Hiragino Sans GB", sans-serif;
+        color: var(--app-text);
+    }
+
+    [data-testid="stAppViewContainer"] {
+        background:
+            radial-gradient(1200px 480px at 8% -12%, #d7ecff 0%, transparent 60%),
+            radial-gradient(1000px 420px at 100% 0%, #d8f5ef 0%, transparent 55%),
+            var(--app-bg);
+    }
+
+    .block-container {
+        max-width: 1180px;
+        padding-top: 1.1rem;
+        padding-bottom: 6rem;
+    }
+
+    h1, h2, h3 {
+        color: #102b45;
+        letter-spacing: -0.02em;
+        font-weight: 800;
+    }
+
+    [data-testid="stSidebar"] > div:first-child {
+        background: linear-gradient(180deg, #eaf3ff 0%, #f7fbff 45%, #f3f7fb 100%);
+    }
+
+    [data-testid="stExpander"] {
+        border: 1px solid var(--app-border);
+        border-radius: 20px;
+        background: var(--app-panel);
+        box-shadow: 0 10px 26px rgba(20, 50, 80, 0.08);
+    }
+
+    [data-testid="stMetric"] {
+        background: #ffffff;
+        border: 1px solid var(--app-border);
+        border-radius: 16px;
+        padding: 0.55rem 0.75rem;
+        box-shadow: 0 6px 18px rgba(18, 43, 69, 0.06);
+    }
+
+    [data-testid="stDataFrame"] {
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid var(--app-border);
+    }
+
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="textarea"] > div {
+        border-radius: 14px;
+        border-color: #ceddeb;
+        background: #fcfeff;
+    }
+
+    .stButton > button {
+        border-radius: 14px;
+        min-height: 44px;
+        font-weight: 700;
+        border: 1px solid #c8dced;
+        color: #11355d;
+        background: #f8fbff;
+    }
+
+    .stButton > button[data-testid="baseButton-primary"] {
+        border: none;
+        color: #ffffff;
+        background: linear-gradient(120deg, var(--app-accent) 0%, var(--app-accent-2) 100%);
+        box-shadow: 0 10px 22px rgba(15, 118, 110, 0.25);
+    }
+
+    [data-testid="stCaptionContainer"] {
+        color: #536e88;
+    }
+
+    .hero-card {
+        border-radius: 20px;
+        border: 1px solid #d7e8f4;
+        background: linear-gradient(120deg, #113b63 0%, #1f6f8f 65%, #2b8f8c 100%);
+        color: #eff9ff;
+        padding: 14px 16px;
+        margin-bottom: 0.8rem;
+        box-shadow: 0 14px 34px rgba(16, 54, 88, 0.26);
+    }
+
+    .hero-title {
+        font-size: 0.86rem;
+        opacity: 0.86;
+    }
+
+    .hero-value {
+        font-size: 1.5rem;
+        font-weight: 800;
+        margin: 3px 0;
+        letter-spacing: -0.02em;
+    }
+
+    .hero-meta {
+        font-size: 0.82rem;
+        opacity: 0.92;
+    }
+
+    @media (max-width: 768px) {
+        .block-container {
+            max-width: 100%;
+            padding-top: 0.8rem;
+            padding-left: 0.78rem;
+            padding-right: 0.78rem;
+            padding-bottom: calc(6.8rem + env(safe-area-inset-bottom));
+        }
+
+        h1 {
+            font-size: 1.42rem;
+            margin-bottom: 0.32rem;
+        }
+
+        h2 {
+            font-size: 1.08rem;
+        }
+
+        [data-testid="stExpander"] {
+            border-radius: 16px;
+        }
+
+        [data-testid="stSidebar"] {
+            width: 86vw !important;
+        }
+
+        .stButton > button {
+            width: 100%;
+            min-height: 46px;
+        }
+
+        .hero-card {
+            border-radius: 16px;
+            padding: 12px 13px;
+        }
+
+        .hero-value {
+            font-size: 1.36rem;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+render_app_theme()
+
 # ------------------------------
 # 数据库连接
 # ------------------------------
@@ -311,6 +474,12 @@ def parse_cookie_header(cookie_raw):
         k, v = segment.split("=", 1)
         data[k.strip()] = v.strip()
     return data
+
+def is_mobile_client():
+    headers = get_request_headers()
+    ua = (headers.get("User-Agent", "") or headers.get("user-agent", "")).lower()
+    mobile_tokens = ["iphone", "ipad", "ipod", "android", "mobile"]
+    return any(token in ua for token in mobile_tokens)
 
 def read_auth_logs(max_lines=160):
     if not os.path.exists(AUTH_LOG_PATH):
@@ -1296,7 +1465,18 @@ def get_my_invited_users(owner):
 # ------------------------------
 # 登录/注册页面 或 主界面
 # ------------------------------
+is_mobile_view = is_mobile_client()
+
 if not st.session_state.logged_in:
+    if is_mobile_view:
+        st.markdown("""
+        <div class="hero-card">
+          <div class="hero-title">欢迎回来</div>
+          <div class="hero-value">资产掌控</div>
+          <div class="hero-meta">支持密码登录与 Face ID 快速验证</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption("📱 iPhone 触控优化模式已启用")
     st.subheader("🔐 请先登录或注册")
     tab1, tab2 = st.tabs(["📥 登录", "📝 注册"])
 
@@ -2100,56 +2280,85 @@ else:
     # ------------------------------
     # 添加投资
     # ------------------------------
+    def render_symbol_search_section():
+        raw_symbol = st.text_input("标的代码（支持模糊查询：代码/名称）", key="add_symbol_query")
+        raw_symbol = raw_symbol.strip().upper()
+        symbol_code_local = raw_symbol
+        preview_market_local = identify_market(symbol_code_local) if symbol_code_local else ""
+        selected_name_local = ""
+
+        if raw_symbol:
+            refresh_us_symbol_cache_by_keyword(raw_symbol)
+            candidates = search_symbol_cache(raw_symbol, limit=20)
+        else:
+            candidates = []
+
+        if candidates:
+            option_map = {}
+            option_list = ["保持手动输入"]
+            for item in candidates:
+                label = f"{item['symbol_code']} | {item['symbol_name']} | {item['market']}"
+                option_map[label] = item
+                option_list.append(label)
+            pick_label = st.selectbox("匹配结果", option_list, key="symbol_match_choice")
+            if pick_label != "保持手动输入":
+                picked = option_map[pick_label]
+                symbol_code_local = picked["symbol_code"]
+                preview_market_local = picked["market"]
+                selected_name_local = picked["symbol_name"]
+                st.caption(f"已选择：{selected_name_local}（{preview_market_local}）")
+            else:
+                st.caption("未选择匹配项，将按输入代码提交")
+
+        return symbol_code_local, preview_market_local, selected_name_local
+
     with st.expander("➕ 添加投资", expanded=True):
         ensure_symbol_cache_ready()
         investor_list = get_investor_list()
-        col1, col2 = st.columns(2)
         selected_symbol_name = ""
-        with col1:
+        symbol_code = ""
+        preview_market = ""
+
+        if is_mobile_view:
             if investor_list:
-                investor = st.selectbox("选择投资人", investor_list + ["新增投资人"])
+                investor = st.selectbox("选择投资人", investor_list + ["新增投资人"], key="add_investor_select_mobile")
                 if investor == "新增投资人":
-                    investor = st.text_input("输入新投资人", value=current_user)
+                    investor = st.text_input("输入新投资人", value=current_user, key="add_investor_new_mobile")
             else:
-                investor = st.text_input("投资人", value=current_user)
-            raw_symbol_input = st.text_input("标的代码（支持模糊查询：代码/名称）")
-            raw_symbol_input = raw_symbol_input.strip().upper()
-            symbol_code = raw_symbol_input
-            preview_market = identify_market(symbol_code) if symbol_code else ""
+                investor = st.text_input("投资人", value=current_user, key="add_investor_mobile")
 
-            if raw_symbol_input:
-                refresh_us_symbol_cache_by_keyword(raw_symbol_input)
-                candidates = search_symbol_cache(raw_symbol_input, limit=20)
-            else:
-                candidates = []
-
-            if candidates:
-                option_map = {}
-                option_list = ["保持手动输入"]
-                for item in candidates:
-                    label = f"{item['symbol_code']} | {item['symbol_name']} | {item['market']}"
-                    option_map[label] = item
-                    option_list.append(label)
-                pick_label = st.selectbox("匹配结果", option_list, key="symbol_match_choice")
-                if pick_label != "保持手动输入":
-                    picked = option_map[pick_label]
-                    symbol_code = picked["symbol_code"]
-                    preview_market = picked["market"]
-                    selected_symbol_name = picked["symbol_name"]
-                    st.caption(f"已选择：{selected_symbol_name}（{preview_market}）")
-                else:
-                    st.caption("未选择匹配项，将按输入代码提交")
-
+            symbol_code, preview_market, selected_symbol_name = render_symbol_search_section()
             is_fund_for_input = is_fund_investment(preview_market, symbol_code) if symbol_code else False
-        with col2:
-            channel = st.text_input("渠道")
+            channel = st.text_input("渠道", key="add_channel_mobile")
             cost_price = st.number_input(
                 "成本价",
                 min_value=0.0,
                 step=0.0001 if is_fund_for_input else 0.01,
-                format="%.4f" if is_fund_for_input else "%.2f"
+                format="%.4f" if is_fund_for_input else "%.2f",
+                key="add_cost_mobile"
             )
-            quantity = st.number_input("数量", min_value=0.0)
+            quantity = st.number_input("数量", min_value=0.0, key="add_qty_mobile")
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                if investor_list:
+                    investor = st.selectbox("选择投资人", investor_list + ["新增投资人"], key="add_investor_select_desktop")
+                    if investor == "新增投资人":
+                        investor = st.text_input("输入新投资人", value=current_user, key="add_investor_new_desktop")
+                else:
+                    investor = st.text_input("投资人", value=current_user, key="add_investor_desktop")
+                symbol_code, preview_market, selected_symbol_name = render_symbol_search_section()
+                is_fund_for_input = is_fund_investment(preview_market, symbol_code) if symbol_code else False
+            with col2:
+                channel = st.text_input("渠道", key="add_channel_desktop")
+                cost_price = st.number_input(
+                    "成本价",
+                    min_value=0.0,
+                    step=0.0001 if is_fund_for_input else 0.01,
+                    format="%.4f" if is_fund_for_input else "%.2f",
+                    key="add_cost_desktop"
+                )
+                quantity = st.number_input("数量", min_value=0.0, key="add_qty_desktop")
 
         if st.button("提交", type="primary"):
             if symbol_code and quantity > 0:
@@ -2174,12 +2383,12 @@ else:
         if logs_df.empty:
             st.caption("暂无日志记录")
         else:
-            st.dataframe(logs_df, width='stretch', hide_index=True)
+            st.dataframe(logs_df, use_container_width=True, hide_index=True)
 
     # ------------------------------
     # 投资明细 & 汇总
     # ------------------------------
-    st.subheader("📋 投资明细")
+    st.subheader("📈 资产面板")
     df = read_data(current_user)
     if not df.empty:
         us_stock_list = df[df["market"] == "美股"]["symbol_code"].unique().tolist()
@@ -2204,6 +2413,38 @@ else:
         df["profit"] = df["current_market_value"] - df["total_cost"]
         df["yield_pct"] = ((df["profit"] / df["total_cost"]) * 100).round(2).fillna(0)
 
+        total_cost = df["total_cost"].sum()
+        total_mv = df["current_market_value"].sum()
+        total_profit = total_mv - total_cost
+        total_yield = round((total_profit / total_cost * 100), 2) if total_cost > 0 else 0
+
+        if is_mobile_view:
+            st.markdown(
+                f"""
+                <div class="hero-card">
+                  <div class="hero-title">资产总览</div>
+                  <div class="hero-value">¥{total_mv:,.2f}</div>
+                  <div class="hero-meta">总收益 ¥{total_profit:,.2f} · 收益率 {total_yield}%</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            m1, m2 = st.columns(2)
+            m1.metric("总成本", f"¥{total_cost:,.2f}")
+            m2.metric("当前市值", f"¥{total_mv:,.2f}")
+            m3, m4 = st.columns(2)
+            m3.metric("总收益", f"¥{total_profit:,.2f}")
+            m4.metric("总收益率", f"{total_yield}%")
+        else:
+            st.subheader("📊 资产汇总（含共享）")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("总成本", f"¥{total_cost:,.2f}")
+            c2.metric("当前市值", f"¥{total_mv:,.2f}")
+            c3.metric("总收益", f"¥{total_profit:,.2f}")
+            c4.metric("总收益率", f"{total_yield}%")
+
+        st.subheader("📋 投资明细")
+
         for _, row in df.iterrows():
             owner_raw = row.get("user", "")
             owner = owner_raw.strip() if isinstance(owner_raw, str) else ""
@@ -2218,42 +2459,51 @@ else:
                     st.caption(f"🔗 由 **{owner_display}** 共享给你 • 只读")
 
                 row_is_fund = is_fund_investment(row["market"], row["symbol_code"])
-                col1, col2, col3 = st.columns([1, 1, 1])
-                new_cost = col1.number_input(
-                    "成本",
-                    value=float(row["cost_price"]),
-                    step=0.0001 if row_is_fund else 0.01,
-                    format="%.4f" if row_is_fund else "%.2f",
-                    key=f"cost{row['id']}"
-                )
-                new_qty = col2.number_input("数量", value=float(row["quantity"]), key=f"qty{row['id']}")
-
-                if can_edit_row:
-                    if col3.button("💾 保存", key=f"save{row['id']}"):
-                        if update_data(row["id"], new_cost, new_qty):
-                            st.rerun()
-                    if col3.button("🗑️ 删除", key=f"del{row['id']}"):
-                        if delete_data(row["id"]):
-                            st.rerun()
+                if is_mobile_view:
+                    in_col1, in_col2 = st.columns(2)
+                    new_cost = in_col1.number_input(
+                        "成本",
+                        value=float(row["cost_price"]),
+                        step=0.0001 if row_is_fund else 0.01,
+                        format="%.4f" if row_is_fund else "%.2f",
+                        key=f"cost{row['id']}"
+                    )
+                    new_qty = in_col2.number_input("数量", value=float(row["quantity"]), key=f"qty{row['id']}")
+                    if can_edit_row:
+                        act_col1, act_col2 = st.columns(2)
+                        if act_col1.button("💾 保存", key=f"save{row['id']}"):
+                            if update_data(row["id"], new_cost, new_qty):
+                                st.rerun()
+                        if act_col2.button("🗑️ 删除", key=f"del{row['id']}"):
+                            if delete_data(row["id"]):
+                                st.rerun()
+                    else:
+                        st.info("只读")
                 else:
-                    col3.info("只读")
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    new_cost = col1.number_input(
+                        "成本",
+                        value=float(row["cost_price"]),
+                        step=0.0001 if row_is_fund else 0.01,
+                        format="%.4f" if row_is_fund else "%.2f",
+                        key=f"cost{row['id']}"
+                    )
+                    new_qty = col2.number_input("数量", value=float(row["quantity"]), key=f"qty{row['id']}")
+
+                    if can_edit_row:
+                        if col3.button("💾 保存", key=f"save{row['id']}"):
+                            if update_data(row["id"], new_cost, new_qty):
+                                st.rerun()
+                        if col3.button("🗑️ 删除", key=f"del{row['id']}"):
+                            if delete_data(row["id"]):
+                                st.rerun()
+                    else:
+                        col3.info("只读")
 
                 st.write(f"**当前价**：{row['current_price']:.4f}")
                 st.write(f"**当前市值**：¥{row['current_market_value']:,.2f}")
                 st.write(f"**收益率**：{row['yield_pct']}%")
-
-        st.subheader("📊 资产汇总（含共享）")
-        total_cost = df["total_cost"].sum()
-        total_mv = df["current_market_value"].sum()
-        total_profit = total_mv - total_cost
-        total_yield = round((total_profit / total_cost * 100), 2) if total_cost > 0 else 0
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("总成本", f"¥{total_cost:,.2f}")
-        c2.metric("当前市值", f"¥{total_mv:,.2f}")
-        c3.metric("总收益", f"¥{total_profit:,.2f}")
-        c4.metric("总收益率", f"{total_yield}%")
     else:
         st.info("暂无数据，快去添加吧！")
 
-    st.caption(f"全球资产管理系统 Pro Ultimate v2.6 | 刷新不登出已修复")
+    st.caption("全球资产管理系统 Pro Ultimate v2.7 | iPhone 视觉与交互优化")
