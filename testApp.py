@@ -10,21 +10,23 @@ import bcrypt
 import hashlib
 
 # ------------------------------
-# 基础设置
+# 基础设置 + 可写数据库路径（关键修复）
 # ------------------------------
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 os.environ.pop("HTTP_PROXY", None)
 os.environ.pop("HTTPS_PROXY", None)
 
+DB_PATH = "/tmp/testApp.db"   # ← 只读环境专用路径
+
 st.set_page_config(page_title="全球资产管理系统 Pro Ultimate", layout="wide", page_icon="🌍")
 st.title("🌍 全球资产管理系统 Pro Ultimate")
 
 # ------------------------------
-# 数据库连接
+# 数据库连接（使用 /tmp）
 # ------------------------------
 @st.cache_resource
 def get_db_connection():
-    conn = sqlite3.connect("testApp.db", check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     return conn
 
 conn = get_db_connection()
@@ -45,7 +47,7 @@ def verify_password(password, stored_hash):
     if is_legacy_hash(stored_hash):
         legacy_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
         if legacy_hash == stored_hash:
-            return True, True   # 需要升级
+            return True, True
         return False, False
     else:
         try:
@@ -54,10 +56,10 @@ def verify_password(password, stored_hash):
             return False, False
 
 # ------------------------------
-# 数据库初始化（已修复：标准SQL写法）
+# 数据库初始化
 # ------------------------------
 def init_database():
-    # === 用户表（干净写法）===
+    # 用户表
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,7 +69,7 @@ def init_database():
         )
     """)
 
-    # === 投资表（干净写法）===
+    # 投资表
     c.execute("""
         CREATE TABLE IF NOT EXISTS investments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +85,7 @@ def init_database():
         )
     """)
 
-    # === 共享表（干净写法）===
+    # 共享表
     c.execute("""
         CREATE TABLE IF NOT EXISTS shares (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,14 +97,14 @@ def init_database():
     """)
     conn.commit()
 
-    # 自动升级旧投资表（兼容老数据）
+    # 自动升级旧表
     c.execute("PRAGMA table_info(investments)")
     cols = [row[1] for row in c.fetchall()]
     if "user" not in cols:
         c.execute("ALTER TABLE investments ADD COLUMN user TEXT")
         conn.commit()
 
-    # 创建默认管理员账号
+    # 默认管理员账号
     c.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
     if c.fetchone()[0] == 0:
         hashed = hash_password("admin123")
@@ -110,11 +112,12 @@ def init_database():
                   ("admin", hashed, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
         st.toast("✅ 默认管理员账号已创建：**admin / admin123**", icon="🎉")
+        st.toast(f"📁 数据库已存放在可写路径：{DB_PATH}", icon="💾")
 
 init_database()
 
 # ------------------------------
-# 用户注册/登录
+# 用户注册/登录（保持不变）
 # ------------------------------
 def register_user(username, password):
     try:
@@ -144,14 +147,12 @@ def login_user(username, password):
     return is_valid
 
 # ------------------------------
-# 共享功能
+# 共享功能（保持不变）
 # ------------------------------
 def invite_user(owner, shared_with):
-    if owner == shared_with:
-        return False, "不能邀请自己"
+    if owner == shared_with: return False, "不能邀请自己"
     c.execute("SELECT 1 FROM users WHERE username=?", (shared_with,))
-    if not c.fetchone():
-        return False, "用户不存在"
+    if not c.fetchone(): return False, "用户不存在"
     try:
         c.execute("INSERT INTO shares (owner, shared_with, created_at) VALUES (?, ?, ?)",
                   (owner, shared_with, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
@@ -173,7 +174,7 @@ def get_my_invited_users(owner):
     return [row[0] for row in c.fetchall()]
 
 # ------------------------------
-# 会话状态 + 登录/注册页面
+# 会话状态 + 登录/注册页面（保持不变）
 # ------------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -225,7 +226,6 @@ else:
 
         st.divider()
         st.subheader("🔗 共享管理")
-
         invited = get_my_invited_users(current_user)
         if invited:
             st.caption("我邀请的用户：")
@@ -257,7 +257,7 @@ else:
             st.write(", ".join(shared_from))
 
     # ------------------------------
-    # 行情 & 数据函数（保持不变）
+    # 行情 & 数据函数（完全保留原逻辑）
     # ------------------------------
     def identify_market(code):
         code = str(code).upper()
@@ -334,8 +334,7 @@ else:
 
     @st.cache_data(ttl=30)
     def get_us_stock_batch_prices(codes):
-        if not codes:
-            return {}
+        if not codes: return {}
         prices = {}
         try:
             data = yf.download(tickers=codes, period="1d", interval="1m", auto_adjust=False, progress=False)
@@ -421,7 +420,7 @@ else:
         return False
 
     # ------------------------------
-    # 添加投资
+    # 添加投资 + 刷新 + 展示（保持不变）
     # ------------------------------
     with st.expander("➕ 添加投资", expanded=True):
         investor_list = get_investor_list()
@@ -448,18 +447,12 @@ else:
                 st.success("✅ 添加成功")
                 st.rerun()
 
-    # ------------------------------
-    # 刷新按钮
-    # ------------------------------
     def refresh_prices():
         st.cache_data.clear()
         st.rerun()
 
     st.button("🔄 刷新行情", on_click=refresh_prices)
 
-    # ------------------------------
-    # 投资明细 & 汇总
-    # ------------------------------
     st.subheader("📋 投资明细")
     df = read_data(current_user)
     if not df.empty:
@@ -525,4 +518,4 @@ else:
     else:
         st.info("暂无数据，快去添加吧！")
 
-    st.caption(f"全球资产管理系统 Pro Ultimate v2.3 | bcrypt + 共享功能")
+    st.caption(f"全球资产管理系统 Pro Ultimate v2.4 | DB路径：{DB_PATH}（重启会清空）")
