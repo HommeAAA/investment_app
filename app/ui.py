@@ -788,18 +788,6 @@ def render_theme() -> None:
             color: var(--app-text);
         }
 
-        header[data-testid="stHeader"],
-        [data-testid="stAppHeader"],
-        [data-testid="stToolbar"],
-        [data-testid="stDecoration"] {
-            display: none !important;
-            height: 0 !important;
-            min-height: 0 !important;
-            max-height: 0 !important;
-            padding: 0 !important;
-            margin: 0 !important;
-        }
-
         .block-container {
             max-width: 1180px;
             padding-top: 0.12rem !important;
@@ -1275,7 +1263,12 @@ def maybe_restore_login(ctx: AppContext) -> None:
 
 def run_app() -> None:
     settings = get_settings()
-    st.set_page_config(page_title=settings.app_name, layout="wide", page_icon="🌍")
+    st.set_page_config(
+        page_title=settings.app_name,
+        layout="wide",
+        page_icon="🌍",
+        initial_sidebar_state="expanded",
+    )
 
     init_session_state()
 
