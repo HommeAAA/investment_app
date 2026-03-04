@@ -13,7 +13,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from .config import get_settings
-from .db import init_db
+from .db import get_database_status, init_db
 from .services import AuthService, LogService, MarketService, PortfolioService, ShareService
 
 try:
@@ -603,10 +603,10 @@ def render_pending_passkey_action() -> None:
         f"""
         <div style="padding: 8px 0;">
           <button id="passkey-trigger-btn" style="width:100%;padding:10px 12px;border:0;border-radius:8px;background:#0f766e;color:#fff;font-weight:600;">
-            继续 Face ID 验证
+            Face ID 重试
           </button>
           <div id="passkey-status" style="margin-top:8px;font-size:13px;color:#475569;">
-            请点击上方按钮后进行 Face ID。
+            正在自动拉起 Face ID...
           </div>
         </div>
         <script>
@@ -730,8 +730,11 @@ def render_pending_passkey_action() -> None:
                     return;
                 }}
                 try {{
-                    if (!document.hasFocus()) {{
-                        throw new Error("页面未获得焦点，请点一下页面后重试");
+                    if (window.parent && window.parent !== window && typeof window.parent.focus === "function") {{
+                        window.parent.focus();
+                    }}
+                    if (typeof window.focus === "function") {{
+                        window.focus();
                     }}
                     if (mode === "register") {{
                         const credential = await navigator.credentials.create({{
@@ -812,6 +815,11 @@ def render_theme() -> None:
             --app-sub: #5a718a;
             --app-accent: #0f766e;
             --nav-bg: rgba(255,255,255,0.92);
+            --sidebar-bg: linear-gradient(180deg, rgba(232,242,252,0.95) 0%, rgba(244,248,252,0.92) 100%);
+            --sidebar-border: #d6e4f0;
+            --sidebar-text: #122b46;
+            --input-bg: #fbfdff;
+            --input-border: #cddcea;
         }
 
         html[data-app-theme="light"],
@@ -824,6 +832,11 @@ def render_theme() -> None:
             --app-sub: #5a718a;
             --app-accent: #0f766e;
             --nav-bg: rgba(255,255,255,0.92);
+            --sidebar-bg: linear-gradient(180deg, rgba(232,242,252,0.95) 0%, rgba(244,248,252,0.92) 100%);
+            --sidebar-border: #d6e4f0;
+            --sidebar-text: #122b46;
+            --input-bg: #fbfdff;
+            --input-border: #cddcea;
         }
 
         [data-testid="stAppViewContainer"] {
@@ -846,9 +859,14 @@ def render_theme() -> None:
         }
 
         [data-testid="stSidebar"] > div:first-child {
-            background: linear-gradient(180deg, rgba(232,242,252,0.93) 0%, rgba(244,248,252,0.9) 100%);
+            background: var(--sidebar-bg);
             backdrop-filter: blur(10px);
-            border-right: 1px solid #d6e4f0;
+            border-right: 1px solid var(--sidebar-border);
+            color: var(--sidebar-text);
+        }
+
+        [data-testid="stSidebar"] * {
+            color: var(--sidebar-text);
         }
 
         [data-testid="stExpander"],
@@ -863,8 +881,9 @@ def render_theme() -> None:
         div[data-baseweb="select"] > div,
         div[data-baseweb="textarea"] > div {
             border-radius: 12px;
-            border-color: #cddcea;
-            background: #fbfdff;
+            border-color: var(--input-border);
+            background: var(--input-bg);
+            color: var(--app-text);
         }
 
         .stButton > button {
@@ -906,6 +925,11 @@ def render_theme() -> None:
             --app-sub: #9eb2c8;
             --app-accent: #2dd4bf;
             --nav-bg: rgba(17,27,46,0.9);
+            --sidebar-bg: linear-gradient(180deg, rgba(17,27,46,0.97) 0%, rgba(14,23,39,0.95) 100%);
+            --sidebar-border: #2a3c58;
+            --sidebar-text: #e6eef8;
+            --input-bg: #0f1727;
+            --input-border: #334866;
         }
 
         html[data-app-theme="dark"] [data-testid="stAppViewContainer"],
@@ -1010,6 +1034,30 @@ def render_bottom_nav(active_tab: str) -> None:
 
 def currency_symbol(currency: str) -> str:
     return {"CNY": "¥", "USD": "$"}.get(currency, "")
+
+
+def _mask_db_url(url: str) -> str:
+    if "://" not in url or "@" not in url:
+        return url
+    prefix, rest = url.split("://", 1)
+    creds, tail = rest.split("@", 1)
+    if ":" in creds:
+        user = creds.split(":", 1)[0]
+        safe_creds = f"{user}:***"
+    else:
+        safe_creds = "***"
+    return f"{prefix}://{safe_creds}@{tail}"
+
+
+def render_data_source_status() -> None:
+    status = get_database_status()
+    driver = status.get("driver", "unknown")
+    mode = status.get("mode", "unknown")
+    raw_url = status.get("url", "unknown")
+    safe_url = _mask_db_url(raw_url)
+    badge = "🟢 PostgreSQL" if driver == "postgresql" else "🟡 SQLite"
+    mode_text = "主库" if mode == "primary" else "回退"
+    st.caption(f"{badge} · {mode_text} · `{safe_url}`")
 
 
 def render_login_page(ctx: AppContext) -> None:
@@ -1332,6 +1380,7 @@ def run_app() -> None:
     st.title("🌍 全球资产管理系统 Pro")
 
     init_db()
+    render_data_source_status()
 
     auth = AuthService()
     auth.ensure_admin_user()
