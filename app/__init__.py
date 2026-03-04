@@ -1,0 +1,1 @@
+"""Investment app package."""

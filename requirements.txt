@@ -1,6 +1,7 @@
 streamlit
 pandas
 sqlalchemy
+psycopg[binary]
 yfinance
 plotly
 numpy
