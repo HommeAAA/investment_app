@@ -378,10 +378,10 @@ class SymbolRepository:
             if key not in seen:
                 seen.add(key)
                 results.append(item)
-                if len(results) &gt;= limit:
+                if len(results) >= limit:
                     break
         
-        if len(results) &lt; limit:
+        if len(results) < limit:
             investment_stmt = (
                 select(Investment)
                 .where(
@@ -404,7 +404,7 @@ class SymbolRepository:
                         updated_at=datetime.utcnow(),
                     )
                     results.append(cache_item)
-                    if len(results) &gt;= limit:
+                    if len(results) >= limit:
                         break
         
         return results[:limit]
