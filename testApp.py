@@ -64,6 +64,7 @@ AUTH_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 AUTH_LOG_PATH = "/tmp/investment_app_auth.log"
 CLIENT_ID_COOKIE = "investment_app_client_id"
 PASSKEY_RESULT_QUERY_KEY = "passkey_result"
+PASSKEY_STATE_QUERY_KEY = "passkey_state"
 PASSKEY_CHALLENGE_TTL_SECONDS = 3 * 60
 
 def get_setting(name, default=""):
@@ -737,6 +738,14 @@ def start_passkey_registration(username):
         "challenge": challenge,
         "created_at": int(time.time()),
     }
+    set_query_value(PASSKEY_STATE_QUERY_KEY, make_passkey_state_token({
+        "mode": "register",
+        "username": username,
+        "rp_id": rp_id,
+        "origin": origin,
+        "challenge": challenge,
+        "created_at": int(time.time()),
+    }))
     st.session_state.passkey_pending_action = {
         "mode": "register",
         "options": options_payload,
@@ -772,6 +781,13 @@ def start_passkey_authentication():
         "challenge": challenge,
         "created_at": int(time.time()),
     }
+    set_query_value(PASSKEY_STATE_QUERY_KEY, make_passkey_state_token({
+        "mode": "authenticate",
+        "rp_id": rp_id,
+        "origin": origin,
+        "challenge": challenge,
+        "created_at": int(time.time()),
+    }))
     st.session_state.passkey_pending_action = {
         "mode": "authenticate",
         "options": options_payload,
@@ -792,6 +808,44 @@ def consume_passkey_query_result():
         st.error("Face ID 回调数据解析失败，请重试。")
         return None
 
+def make_passkey_state_token(state_dict):
+    payload_json = json.dumps(state_dict, separators=(",", ":"), ensure_ascii=False)
+    payload = b64url_encode(payload_json.encode("utf-8"))
+    signature = sign_auth_payload(f"passkey|{payload}")
+    return f"{payload}.{signature}"
+
+def parse_passkey_state_token(token):
+    try:
+        if not token or "." not in token:
+            return None
+        payload, signature = token.rsplit(".", 1)
+        expected = sign_auth_payload(f"passkey|{payload}")
+        if not hmac.compare_digest(signature, expected):
+            auth_log("passkey_state_bad_signature")
+            return None
+        raw = b64url_decode(payload).decode("utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except Exception as e:
+        auth_log("passkey_state_parse_error", error=str(e))
+        return None
+
+def get_passkey_state_for_mode(mode):
+    token = get_query_value(PASSKEY_STATE_QUERY_KEY)
+    state = parse_passkey_state_token(token)
+    if not state:
+        return None
+    if state.get("mode") != mode:
+        return None
+    return state
+
+def clear_passkey_state():
+    clear_query_value(PASSKEY_STATE_QUERY_KEY)
+    st.session_state.passkey_registration_state = None
+    st.session_state.passkey_auth_state = None
+
 def challenge_is_expired(state):
     if not state:
         return True
@@ -800,7 +854,9 @@ def challenge_is_expired(state):
 
 def finalize_passkey_registration(payload):
     state = st.session_state.passkey_registration_state
-    st.session_state.passkey_registration_state = None
+    if not state:
+        state = get_passkey_state_for_mode("register")
+    clear_passkey_state()
 
     if not state:
         return False, "Face ID 注册会话不存在，请重新点击“启用 Face ID”。"
@@ -832,7 +888,9 @@ def finalize_passkey_registration(payload):
 
 def finalize_passkey_authentication(payload):
     state = st.session_state.passkey_auth_state
-    st.session_state.passkey_auth_state = None
+    if not state:
+        state = get_passkey_state_for_mode("authenticate")
+    clear_passkey_state()
 
     if not state:
         return False, "Face ID 登录会话不存在，请重试。", None
@@ -874,8 +932,7 @@ def handle_passkey_query_result():
     ok = bool(result.get("ok"))
     if not ok:
         error_msg = result.get("error") or "未知错误"
-        st.session_state.passkey_registration_state = None
-        st.session_state.passkey_auth_state = None
+        clear_passkey_state()
         auth_log("passkey_client_error", mode=mode, error=error_msg)
         st.error(f"Face ID 操作失败：{error_msg}")
         return
@@ -1298,8 +1355,7 @@ else:
             st.session_state.pending_auth_token = None
             st.session_state.clear_auth_client = True
             st.session_state.passkey_pending_action = None
-            st.session_state.passkey_registration_state = None
-            st.session_state.passkey_auth_state = None
+            clear_passkey_state()
             clear_auth_token_from_query()
             clear_login_session()
             st.rerun()
