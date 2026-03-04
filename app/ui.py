@@ -422,7 +422,11 @@ def start_passkey_registration(ctx: AppContext, username: str) -> tuple[bool, st
         "challenge": challenge,
         "created_at": int(time.time()),
     }
-    st.session_state.passkey_pending_action = {"mode": "register", "options": payload}
+    st.session_state.passkey_pending_action = {
+        "mode": "register",
+        "options": payload,
+        "state": st.session_state.passkey_registration_state,
+    }
     return True, "请在系统弹窗中完成 Face ID 注册。"
 
 
@@ -455,7 +459,11 @@ def start_passkey_authentication() -> tuple[bool, str]:
         "challenge": challenge,
         "created_at": int(time.time()),
     }
-    st.session_state.passkey_pending_action = {"mode": "authenticate", "options": payload}
+    st.session_state.passkey_pending_action = {
+        "mode": "authenticate",
+        "options": payload,
+        "state": st.session_state.passkey_auth_state,
+    }
     return True, "请在系统弹窗中完成 Face ID 验证。"
 
 
@@ -472,8 +480,10 @@ def consume_passkey_query_result() -> dict[str, Any] | None:
         return None
 
 
-def finalize_passkey_registration(ctx: AppContext, payload: dict[str, Any]) -> tuple[bool, str]:
-    state = st.session_state.passkey_registration_state
+def finalize_passkey_registration(
+    ctx: AppContext, payload: dict[str, Any], state_override: dict[str, Any] | None = None
+) -> tuple[bool, str]:
+    state = st.session_state.passkey_registration_state or state_override
     st.session_state.passkey_registration_state = None
     if not state:
         return False, "Face ID 注册会话不存在，请重新点击“启用 Face ID”。"
@@ -509,9 +519,9 @@ def finalize_passkey_registration(ctx: AppContext, payload: dict[str, Any]) -> t
 
 
 def finalize_passkey_authentication(
-    ctx: AppContext, payload: dict[str, Any]
+    ctx: AppContext, payload: dict[str, Any], state_override: dict[str, Any] | None = None
 ) -> tuple[bool, str, str | None]:
-    state = st.session_state.passkey_auth_state
+    state = st.session_state.passkey_auth_state or state_override
     st.session_state.passkey_auth_state = None
     if not state:
         return False, "Face ID 登录会话不存在，请重试。", None
@@ -557,8 +567,9 @@ def handle_passkey_query_result(ctx: AppContext) -> None:
         return
 
     payload = result.get("payload") or {}
+    state_payload = result.get("state") if isinstance(result.get("state"), dict) else None
     if mode == "register":
-        success, message = finalize_passkey_registration(ctx, payload)
+        success, message = finalize_passkey_registration(ctx, payload, state_payload)
         if success:
             st.success(message)
         else:
@@ -566,7 +577,7 @@ def handle_passkey_query_result(ctx: AppContext) -> None:
         return
 
     if mode == "authenticate":
-        success, message, username = finalize_passkey_authentication(ctx, payload)
+        success, message, username = finalize_passkey_authentication(ctx, payload, state_payload)
         if not success or not username:
             st.error(message)
             return
@@ -583,7 +594,9 @@ def render_pending_passkey_action() -> None:
 
     mode = action.get("mode")
     options = action.get("options") or {}
+    state_payload = action.get("state") or {}
     payload_json = json.dumps(options, ensure_ascii=False)
+    state_json = json.dumps(state_payload, ensure_ascii=False)
     query_key = PASSKEY_RESULT_QUERY_KEY
 
     components.html(
@@ -600,6 +613,7 @@ def render_pending_passkey_action() -> None:
         (function() {{
             const mode = {json.dumps(mode)};
             const options = {payload_json};
+            const statePayload = {state_json};
             const queryKey = {json.dumps(query_key)};
             const triggerBtn = document.getElementById("passkey-trigger-btn");
             const statusEl = document.getElementById("passkey-status");
@@ -709,7 +723,7 @@ def render_pending_passkey_action() -> None:
 
             async function runPasskey() {{
                 if (!window.PublicKeyCredential) {{
-                    sendResult({{ mode, ok: false, error: "当前浏览器不支持 Passkey/Face ID" }});
+                    sendResult({{ mode, ok: false, error: "当前浏览器不支持 Passkey/Face ID", state: statePayload }});
                     return;
                 }}
                 try {{
@@ -724,6 +738,7 @@ def render_pending_passkey_action() -> None:
                             mode,
                             ok: true,
                             payload: serializeRegistrationCredential(credential),
+                            state: statePayload,
                         }});
                         return;
                     }}
@@ -734,12 +749,14 @@ def render_pending_passkey_action() -> None:
                         mode,
                         ok: true,
                         payload: serializeAuthenticationCredential(credential),
+                        state: statePayload,
                     }});
                 }} catch (error) {{
                     sendResult({{
                         mode,
                         ok: false,
                         error: error && error.message ? error.message : String(error),
+                        state: statePayload,
                     }});
                 }}
             }}
