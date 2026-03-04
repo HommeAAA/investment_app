@@ -911,11 +911,27 @@ def render_pending_passkey_action():
 
     components.html(
         f"""
+        <div style="padding: 8px 0;">
+          <button id="passkey-trigger-btn" style="width:100%;padding:10px 12px;border:0;border-radius:8px;background:#0f766e;color:#fff;font-weight:600;">
+            继续 Face ID 验证
+          </button>
+          <div id="passkey-status" style="margin-top:8px;font-size:13px;color:#475569;">
+            请点击上方按钮后进行 Face ID。
+          </div>
+        </div>
         <script>
         (function() {{
             const mode = {json.dumps(mode)};
             const options = {payload_json};
             const queryKey = {json.dumps(query_key)};
+            const triggerBtn = document.getElementById("passkey-trigger-btn");
+            const statusEl = document.getElementById("passkey-status");
+
+            function setStatus(text, isError) {{
+                if (!statusEl) return;
+                statusEl.textContent = text;
+                statusEl.style.color = isError ? "#b91c1c" : "#475569";
+            }}
 
             function toBytes(value) {{
                 if (value instanceof Uint8Array) return value;
@@ -1014,12 +1030,22 @@ def render_pending_passkey_action():
                 hostWindow.location.replace(url.toString());
             }}
 
-            (async () => {{
+            async function runPasskey() {{
                 if (!window.PublicKeyCredential) {{
                     sendResult({{ mode, ok: false, error: "当前浏览器不支持 Passkey/Face ID" }});
                     return;
                 }}
                 try {{
+                    if (window.parent && window.parent !== window && typeof window.parent.focus === "function") {{
+                        window.parent.focus();
+                    }}
+                    if (typeof window.focus === "function") {{
+                        window.focus();
+                    }}
+                    if (!document.hasFocus()) {{
+                        throw new Error("页面未获得焦点，请点一下页面后重试");
+                    }}
+
                     if (mode === "register") {{
                         const credential = await navigator.credentials.create({{
                             publicKey: normalizeCreateOptions(options),
@@ -1046,11 +1072,27 @@ def render_pending_passkey_action():
                         error: error && error.message ? error.message : String(error),
                     }});
                 }}
-            }})();
+            }}
+
+            if (!triggerBtn) {{
+                setStatus("无法渲染 Face ID 按钮，请刷新页面重试。", true);
+                return;
+            }}
+            triggerBtn.addEventListener("click", () => {{
+                triggerBtn.disabled = true;
+                triggerBtn.style.opacity = "0.7";
+                setStatus("正在请求 Face ID，请在系统弹窗中确认...", false);
+                runPasskey();
+            }});
+            setTimeout(() => {{
+                try {{
+                    triggerBtn.focus();
+                }} catch (e) {{}}
+            }}, 50);
         }})();
         </script>
         """,
-        height=0,
+        height=120,
     )
 
 # ------------------------------
