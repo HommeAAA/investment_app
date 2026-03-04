@@ -21,7 +21,6 @@ class Base(DeclarativeBase):
 _engine = None
 SessionLocal = None
 _active_database_url = None
-_using_sqlite_fallback = False
 
 
 def _connectable_engine(url: str):
@@ -29,7 +28,7 @@ def _connectable_engine(url: str):
 
 
 def get_engine():
-    global _engine, SessionLocal, _active_database_url, _using_sqlite_fallback
+    global _engine, SessionLocal, _active_database_url
     if _engine is not None:
         return _engine
 
@@ -40,18 +39,11 @@ def get_engine():
             conn.execute(text("SELECT 1"))
         logger.info("Using database: %s", settings.database_url)
         _active_database_url = settings.database_url
-        _using_sqlite_fallback = False
     except (NoSuchModuleError, OperationalError, ModuleNotFoundError) as exc:
-        if not settings.allow_sqlite_fallback:
-            raise
-        logger.warning(
-            "Primary database unavailable (%s). Falling back to SQLite: %s",
-            exc,
-            settings.sqlite_fallback_url,
+        raise RuntimeError(
+            "PostgreSQL connection failed. Set a valid DATABASE_URL "
+            "(or Streamlit secrets DATABASE_URL) and ensure network access."
         )
-        _engine = _connectable_engine(settings.sqlite_fallback_url)
-        _active_database_url = settings.sqlite_fallback_url
-        _using_sqlite_fallback = True
 
     SessionLocal = scoped_session(
         sessionmaker(bind=_engine, autoflush=False, autocommit=False, expire_on_commit=False)
@@ -91,5 +83,4 @@ def get_database_status() -> dict[str, str]:
     if not url_text:
         url_text = "unknown"
     driver = "sqlite" if url_text.startswith("sqlite:") else "postgresql"
-    mode = "fallback" if _using_sqlite_fallback else "primary"
-    return {"driver": driver, "mode": mode, "url": url_text}
+    return {"driver": driver, "url": url_text}

@@ -1036,28 +1036,11 @@ def currency_symbol(currency: str) -> str:
     return {"CNY": "¥", "USD": "$"}.get(currency, "")
 
 
-def _mask_db_url(url: str) -> str:
-    if "://" not in url or "@" not in url:
-        return url
-    prefix, rest = url.split("://", 1)
-    creds, tail = rest.split("@", 1)
-    if ":" in creds:
-        user = creds.split(":", 1)[0]
-        safe_creds = f"{user}:***"
-    else:
-        safe_creds = "***"
-    return f"{prefix}://{safe_creds}@{tail}"
-
-
 def render_data_source_status() -> None:
     status = get_database_status()
     driver = status.get("driver", "unknown")
-    mode = status.get("mode", "unknown")
-    raw_url = status.get("url", "unknown")
-    safe_url = _mask_db_url(raw_url)
-    badge = "🟢 PostgreSQL" if driver == "postgresql" else "🟡 SQLite"
-    mode_text = "主库" if mode == "primary" else "回退"
-    st.caption(f"{badge} · {mode_text} · `{safe_url}`")
+    name = "PostgreSQL" if driver == "postgresql" else "SQLite"
+    st.caption(f"数据源：{name}")
 
 
 def render_login_page(ctx: AppContext) -> None:
