@@ -65,9 +65,22 @@ AUTH_LOG_PATH = "/tmp/investment_app_auth.log"
 CLIENT_ID_COOKIE = "investment_app_client_id"
 PASSKEY_RESULT_QUERY_KEY = "passkey_result"
 PASSKEY_CHALLENGE_TTL_SECONDS = 3 * 60
-WEBAUTHN_RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "Investment App")
-WEBAUTHN_RP_ID = os.environ.get("WEBAUTHN_RP_ID", "").strip()
-WEBAUTHN_ORIGIN = os.environ.get("WEBAUTHN_ORIGIN", "").strip()
+
+def get_setting(name, default=""):
+    env_value = os.environ.get(name, "").strip()
+    if env_value:
+        return env_value
+    try:
+        secret_value = st.secrets.get(name, "")
+        if isinstance(secret_value, str):
+            secret_value = secret_value.strip()
+        return secret_value or default
+    except Exception:
+        return default
+
+WEBAUTHN_RP_NAME = get_setting("WEBAUTHN_RP_NAME", "Investment App")
+WEBAUTHN_RP_ID = get_setting("WEBAUTHN_RP_ID", "")
+WEBAUTHN_ORIGIN = get_setting("WEBAUTHN_ORIGIN", "")
 
 auth_logger = logging.getLogger("investment_app.auth")
 if not auth_logger.handlers:
@@ -554,15 +567,29 @@ def get_webauthn_context():
     headers = get_request_headers()
     host = headers.get("Host", "") or headers.get("host", "")
     proto = headers.get("X-Forwarded-Proto", "") or headers.get("x-forwarded-proto", "")
+    forwarded = headers.get("Forwarded", "") or headers.get("forwarded", "")
 
     if "," in host:
         host = host.split(",")[0].strip()
     if "," in proto:
         proto = proto.split(",")[0].strip()
-    if not proto:
-        proto = "http"
+    if not proto and forwarded:
+        segments = [x.strip() for x in forwarded.split(";")]
+        for segment in segments:
+            if segment.lower().startswith("proto="):
+                proto = segment.split("=", 1)[1].strip().strip('"').lower()
+                break
 
-    rp_id = WEBAUTHN_RP_ID or (host.split(":")[0] if host else "")
+    host_name = host.split(":")[0] if host else ""
+    if not proto:
+        if host_name.endswith(".streamlit.app"):
+            proto = "https"
+        elif host_name in ("localhost", "127.0.0.1"):
+            proto = "http"
+        else:
+            proto = "https"
+
+    rp_id = WEBAUTHN_RP_ID or host_name
     origin = WEBAUTHN_ORIGIN or (f"{proto}://{host}" if host else "")
     return rp_id, origin
 
