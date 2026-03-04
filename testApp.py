@@ -2086,6 +2086,45 @@ else:
     def is_fund_investment(market, symbol_code):
         return market == "A股" and is_fund_code(str(symbol_code))
 
+    def get_market_currency(market):
+        if market == "A股":
+            return "CNY"
+        if market == "美股":
+            return "USD"
+        if market == "Crypto":
+            return "USD"
+        return "CNY"
+
+    @st.cache_data(ttl=900)
+    def get_fx_rates():
+        rates = {"USD": 1.0, "CNY": 7.2}
+        try:
+            r = requests.get("https://open.er-api.com/v6/latest/USD", timeout=6)
+            data = r.json()
+            if data.get("result") == "success":
+                usd_to_cny = float(data.get("rates", {}).get("CNY", 7.2))
+                if usd_to_cny > 0:
+                    rates["CNY"] = usd_to_cny
+        except Exception:
+            pass
+        rates["USD"] = 1.0
+        return rates
+
+    def convert_amount(amount, from_currency, to_currency, rates):
+        value = float(amount or 0)
+        from_ccy = str(from_currency or "USD").upper()
+        to_ccy = str(to_currency or "USD").upper()
+        if from_ccy == to_ccy:
+            return value
+        if from_ccy not in rates or to_ccy not in rates:
+            return value
+        usd_amount = value / float(rates[from_ccy])
+        return usd_amount * float(rates[to_ccy])
+
+    def get_currency_symbol(currency):
+        mapping = {"CNY": "¥", "USD": "$"}
+        return mapping.get(str(currency).upper(), "")
+
     def serialize_log_payload(data):
         if data is None:
             return None
@@ -2280,7 +2319,7 @@ else:
         )
         return True
 
-    def update_data(record_id, cost_price, quantity):
+    def update_data(record_id, investor, cost_price, quantity):
         c.execute("""
             SELECT investor, market, symbol_code, symbol_name, channel, cost_price, quantity, update_time, user
             FROM investments WHERE id=?
@@ -2307,12 +2346,13 @@ else:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         c.execute("""
             UPDATE investments
-            SET cost_price=?, quantity=?, update_time=?
+            SET investor=?, cost_price=?, quantity=?, update_time=?
             WHERE id = ?
-        """, (cost_price, quantity, now_str, record_id))
+        """, (investor, cost_price, quantity, now_str, record_id))
         conn.commit()
         after_data = {
             **before_data,
+            "investor": investor,
             "cost_price": float(cost_price),
             "quantity": float(quantity),
             "update_time": now_str,
@@ -2399,6 +2439,13 @@ else:
 
     st.button("🔄 刷新行情", on_click=refresh_prices)
 
+    valuation_mode = st.selectbox(
+        "计价方式",
+        ["原币种", "人民币 (CNY)", "美元 (USD)"],
+        index=0,
+        help="原币种：按市场币种分别汇总；统一计价：折算到 CNY 或 USD。"
+    )
+
     # ------------------------------
     # 投资明细 & 汇总
     # ------------------------------
@@ -2426,6 +2473,26 @@ else:
         df["current_market_value"] = df["current_price"] * df["quantity"]
         df["profit"] = df["current_market_value"] - df["total_cost"]
         df["yield_pct"] = ((df["profit"] / df["total_cost"]) * 100).round(2).fillna(0)
+        df["currency"] = df["market"].apply(get_market_currency)
+
+        rates = get_fx_rates()
+        target_currency = None
+        if "人民币" in valuation_mode:
+            target_currency = "CNY"
+        elif "美元" in valuation_mode:
+            target_currency = "USD"
+
+        if target_currency:
+            df["total_cost_valuation"] = df.apply(
+                lambda r: convert_amount(r["total_cost"], r["currency"], target_currency, rates), axis=1
+            )
+            df["current_market_value_valuation"] = df.apply(
+                lambda r: convert_amount(r["current_market_value"], r["currency"], target_currency, rates), axis=1
+            )
+            df["profit_valuation"] = df["current_market_value_valuation"] - df["total_cost_valuation"]
+            df["yield_pct_valuation"] = (
+                (df["profit_valuation"] / df["total_cost_valuation"]) * 100
+            ).replace([float("inf"), -float("inf")], 0).fillna(0).round(2)
 
         for _, row in df.iterrows():
             owner_raw = row.get("user", "")
@@ -2441,41 +2508,81 @@ else:
                     st.caption(f"🔗 由 **{owner_display}** 共享给你 • 只读")
 
                 row_is_fund = is_fund_investment(row["market"], row["symbol_code"])
-                col1, col2, col3 = st.columns([1, 1, 1])
-                new_cost = col1.number_input(
+                col1, col2, col3, col4, col5 = st.columns([1.3, 1, 1, 0.8, 0.8])
+                current_investor = row["investor"] if row["investor"] else current_user
+                investor_candidates = [x for x in get_investor_list() if x]
+                if current_investor not in investor_candidates:
+                    investor_candidates = [current_investor] + investor_candidates
+                investor_options = investor_candidates + ["新增投资人"]
+                selected_investor = col1.selectbox(
+                    "投资人",
+                    investor_options,
+                    index=investor_options.index(current_investor) if current_investor in investor_options else 0,
+                    key=f"investor_{row['id']}"
+                )
+                if selected_investor == "新增投资人":
+                    selected_investor = col1.text_input("新投资人", value=current_investor, key=f"investor_new_{row['id']}")
+                selected_investor = (selected_investor or "").strip() or current_investor
+                new_cost = col2.number_input(
                     "成本",
                     value=float(row["cost_price"]),
                     step=0.0001 if row_is_fund else 0.01,
                     format="%.4f" if row_is_fund else "%.2f",
                     key=f"cost{row['id']}"
                 )
-                new_qty = col2.number_input("数量", value=float(row["quantity"]), key=f"qty{row['id']}")
+                new_qty = col3.number_input("数量", value=float(row["quantity"]), key=f"qty{row['id']}")
 
                 if can_edit_row:
-                    if col3.button("💾 保存", key=f"save{row['id']}"):
-                        if update_data(row["id"], new_cost, new_qty):
+                    if col4.button("💾 保存", key=f"save{row['id']}"):
+                        if update_data(row["id"], selected_investor, new_cost, new_qty):
                             st.rerun()
-                    if col3.button("🗑️ 删除", key=f"del{row['id']}"):
+                    if col5.button("🗑️ 删除", key=f"del{row['id']}"):
                         if delete_data(row["id"]):
                             st.rerun()
                 else:
-                    col3.info("只读")
+                    col5.info("只读")
 
-                st.write(f"**当前价**：{row['current_price']:.4f}")
-                st.write(f"**当前市值**：¥{row['current_market_value']:,.2f}")
+                currency = row["currency"]
+                currency_symbol = get_currency_symbol(currency)
+                st.write(f"**当前价**：{row['current_price']:.4f} {currency}")
+                st.write(f"**当前市值**：{currency_symbol}{row['current_market_value']:,.2f} ({currency})")
                 st.write(f"**收益率**：{row['yield_pct']}%")
+                if target_currency:
+                    target_symbol = get_currency_symbol(target_currency)
+                    valuation_mv = convert_amount(row["current_market_value"], currency, target_currency, rates)
+                    st.write(f"**折算市值**：{target_symbol}{valuation_mv:,.2f} ({target_currency})")
 
         st.subheader("📊 资产汇总（含共享）")
-        total_cost = df["total_cost"].sum()
-        total_mv = df["current_market_value"].sum()
-        total_profit = total_mv - total_cost
-        total_yield = round((total_profit / total_cost * 100), 2) if total_cost > 0 else 0
+        if target_currency:
+            total_cost = df["total_cost_valuation"].sum()
+            total_mv = df["current_market_value_valuation"].sum()
+            total_profit = total_mv - total_cost
+            total_yield = round((total_profit / total_cost * 100), 2) if total_cost > 0 else 0
+            target_symbol = get_currency_symbol(target_currency)
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("总成本", f"¥{total_cost:,.2f}")
-        c2.metric("当前市值", f"¥{total_mv:,.2f}")
-        c3.metric("总收益", f"¥{total_profit:,.2f}")
-        c4.metric("总收益率", f"{total_yield}%")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("总成本", f"{target_symbol}{total_cost:,.2f}")
+            c2.metric("当前市值", f"{target_symbol}{total_mv:,.2f}")
+            c3.metric("总收益", f"{target_symbol}{total_profit:,.2f}")
+            c4.metric("总收益率", f"{total_yield}%")
+        else:
+            grouped = df.groupby("currency", as_index=False).agg(
+                total_cost=("total_cost", "sum"),
+                total_mv=("current_market_value", "sum"),
+            )
+            for _, g in grouped.iterrows():
+                ccy = g["currency"]
+                total_cost = float(g["total_cost"])
+                total_mv = float(g["total_mv"])
+                total_profit = total_mv - total_cost
+                total_yield = round((total_profit / total_cost * 100), 2) if total_cost > 0 else 0
+                symbol = get_currency_symbol(ccy)
+                st.markdown(f"**{ccy} 汇总**")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("总成本", f"{symbol}{total_cost:,.2f}")
+                c2.metric("当前市值", f"{symbol}{total_mv:,.2f}")
+                c3.metric("总收益", f"{symbol}{total_profit:,.2f}")
+                c4.metric("总收益率", f"{total_yield}%")
     else:
         st.info("暂无数据，快去添加吧！")
 
