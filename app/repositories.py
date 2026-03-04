@@ -9,7 +9,7 @@ from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .models import AppMeta, Investment, OperationLog, Share, SymbolCache, User
+from .models import AppMeta, Investment, OperationLog, Share, SymbolCache, User, UserPasskey
 
 
 @dataclass
@@ -45,6 +45,74 @@ class AuthRepository:
         if not exists:
             session.add(User(username=username, password_hash=password_hash))
             session.flush()
+
+
+class PasskeyRepository:
+    @staticmethod
+    def list_for_user(session: Session, username: str) -> list[UserPasskey]:
+        return list(
+            session.scalars(
+                select(UserPasskey).where(UserPasskey.username == username).order_by(desc(UserPasskey.id))
+            )
+        )
+
+    @staticmethod
+    def get_by_credential_id(session: Session, credential_id: str) -> UserPasskey | None:
+        return session.scalar(select(UserPasskey).where(UserPasskey.credential_id == credential_id))
+
+    @staticmethod
+    def upsert(
+        session: Session,
+        *,
+        username: str,
+        credential_id: str,
+        public_key: str,
+        sign_count: int,
+        transports: str,
+    ) -> UserPasskey:
+        row = session.scalar(select(UserPasskey).where(UserPasskey.credential_id == credential_id))
+        now = datetime.utcnow()
+        if row is None:
+            row = UserPasskey(
+                username=username,
+                credential_id=credential_id,
+                public_key=public_key,
+                sign_count=int(sign_count or 0),
+                transports=transports,
+                created_at=now,
+                last_used_at=now,
+            )
+            session.add(row)
+            session.flush()
+            return row
+
+        row.username = username
+        row.public_key = public_key
+        row.sign_count = int(sign_count or 0)
+        row.transports = transports
+        row.last_used_at = now
+        session.flush()
+        return row
+
+    @staticmethod
+    def update_sign_count(session: Session, credential_id: str, sign_count: int) -> None:
+        row = session.scalar(select(UserPasskey).where(UserPasskey.credential_id == credential_id))
+        if row is None:
+            return
+        row.sign_count = int(sign_count or 0)
+        row.last_used_at = datetime.utcnow()
+        session.flush()
+
+    @staticmethod
+    def delete(session: Session, username: str, passkey_id: int) -> bool:
+        row = session.scalar(
+            select(UserPasskey).where(and_(UserPasskey.id == int(passkey_id), UserPasskey.username == username))
+        )
+        if row is None:
+            return False
+        session.delete(row)
+        session.flush()
+        return True
 
 
 class ShareRepository:

@@ -20,6 +20,7 @@ from .repositories import (
     AuthRepository,
     InvestmentRepository,
     LogRepository,
+    PasskeyRepository,
     RepoResult,
     ShareRepository,
     SymbolRepository,
@@ -112,6 +113,67 @@ class AuthService:
             if user is None:
                 return False
             return self.verify_password(password, user.password_hash)
+
+    def list_passkeys(self, username: str) -> list[dict[str, Any]]:
+        with session_scope() as session:
+            rows = PasskeyRepository.list_for_user(session, username)
+            return [
+                {
+                    "id": row.id,
+                    "username": row.username,
+                    "credential_id": row.credential_id,
+                    "public_key": row.public_key,
+                    "sign_count": int(row.sign_count or 0),
+                    "transports": row.transports or "[]",
+                    "created_at": row.created_at,
+                    "last_used_at": row.last_used_at,
+                }
+                for row in rows
+            ]
+
+    def get_passkey_by_credential_id(self, credential_id: str) -> dict[str, Any] | None:
+        with session_scope() as session:
+            row = PasskeyRepository.get_by_credential_id(session, credential_id)
+            if row is None:
+                return None
+            return {
+                "id": row.id,
+                "username": row.username,
+                "credential_id": row.credential_id,
+                "public_key": row.public_key,
+                "sign_count": int(row.sign_count or 0),
+                "transports": row.transports or "[]",
+                "created_at": row.created_at,
+                "last_used_at": row.last_used_at,
+            }
+
+    def upsert_passkey(
+        self,
+        *,
+        username: str,
+        credential_id: str,
+        public_key: str,
+        sign_count: int,
+        transports: list[str] | None = None,
+    ) -> None:
+        payload = json.dumps(transports or [], ensure_ascii=False)
+        with session_scope() as session:
+            PasskeyRepository.upsert(
+                session,
+                username=username,
+                credential_id=credential_id,
+                public_key=public_key,
+                sign_count=int(sign_count or 0),
+                transports=payload,
+            )
+
+    def update_passkey_sign_count(self, credential_id: str, sign_count: int) -> None:
+        with session_scope() as session:
+            PasskeyRepository.update_sign_count(session, credential_id, int(sign_count or 0))
+
+    def delete_passkey(self, username: str, passkey_id: int) -> bool:
+        with session_scope() as session:
+            return PasskeyRepository.delete(session, username, int(passkey_id))
 
 
 class MarketService:

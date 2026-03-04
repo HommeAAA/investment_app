@@ -80,3 +80,17 @@ class AppMeta(Base):
     meta_key: Mapped[str] = mapped_column(String(120), primary_key=True)
     meta_value: Mapped[str] = mapped_column(Text, default="", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class UserPasskey(Base):
+    __tablename__ = "user_passkeys"
+    __table_args__ = (UniqueConstraint("credential_id", name="uq_user_passkeys_credential"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    credential_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
+    public_key: Mapped[str] = mapped_column(Text, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    transports: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
