@@ -30,8 +30,8 @@
     }
   },
   "compileType": "miniprogram",
-  "miniprogramRoot": "miniapp/",
-  "cloudfunctionRoot": "cloudfunctions/",
+  "miniprogramRoot": "./",
+  "cloudfunctionRoot": "../cloudfunctions/",
   "simulatorPluginLibVersion": {},
   "appid": "your_appid_here",
   "projectname": "investment-miniapp",
