@@ -1,0 +1,22 @@
+<view class="page">
+  <view class="card">
+    <view class="title">微信登录</view>
+    <view class="sub">首次登录会自动创建账号</view>
+    <button class="btn secondary" bindtap="onCheckCloud" loading="{{loadingCheck}}">先检查云函数连接</button>
+    <button type="primary" class="btn" bindtap="onWechatLogin" loading="{{loadingLogin}}">微信一键登录</button>
+  </view>
+
+  <view class="card" wx:if="{{user && !user.boundLegacy}}">
+    <view class="title">绑定旧账号（迁移历史数据）</view>
+    <view class="sub">仅首次绑定需要输入一次</view>
+    <input class="input" placeholder="旧用户名" value="{{legacyUsername}}" bindinput="onLegacyUsernameInput" />
+    <input class="input" password="true" placeholder="旧密码" value="{{legacyPassword}}" bindinput="onLegacyPasswordInput" />
+    <button type="primary" class="btn" bindtap="onBindLegacy" loading="{{loadingBind}}">绑定并迁移</button>
+  </view>
+
+  <view class="card" wx:if="{{user && user.boundLegacy}}">
+    <view class="title">已登录</view>
+    <view class="sub">{{user.nickname}}（邀请码：{{user.inviteCode}}）</view>
+    <button class="btn" bindtap="goPortfolio">进入资产页</button>
+  </view>
+</view>

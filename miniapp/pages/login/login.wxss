@@ -1,0 +1,21 @@
+.page {
+  padding: 24rpx;
+}
+
+.btn {
+  margin-top: 20rpx;
+}
+
+.secondary {
+  background: #ffffff;
+  color: #0f766e;
+  border: 1rpx solid #0f766e;
+}
+
+.input {
+  background: #f8fafc;
+  border: 1rpx solid #dbe7f4;
+  border-radius: 12rpx;
+  padding: 16rpx;
+  margin-top: 14rpx;
+}

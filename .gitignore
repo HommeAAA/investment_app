@@ -20,13 +20,17 @@ venv/
 *.sqlite
 *.sqlite3
 .cloudflared/
-scripts/
 IPHONE_QUICKSTART.md
 ARCHITECTURE.md
+.streamlit/
+scripts/__pycache__/
 scripts/cloudflare_tunnel_setup.sh
 scripts/start_streamlit.sh
 scripts/start_tunnel.sh
-.streamlit/
+scripts/migrate_to_postgres.py
+wechat-miniapp/
+cloudfunctions/**/node_modules/
+miniapp/miniprogram_npm/
 
 # OS
 .DS_Store

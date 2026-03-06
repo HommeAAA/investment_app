@@ -1,0 +1,9 @@
+{
+  "desc": "investment miniapp sitemap",
+  "rules": [
+    {
+      "action": "allow",
+      "page": "*"
+    }
+  ]
+}

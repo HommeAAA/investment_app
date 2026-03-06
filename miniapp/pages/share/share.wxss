@@ -1,0 +1,38 @@
+.page {
+  padding: 24rpx;
+}
+
+.code {
+  margin-top: 12rpx;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #0f766e;
+  letter-spacing: 4rpx;
+}
+
+.input {
+  background: #f8fafc;
+  border: 1rpx solid #dbe7f4;
+  border-radius: 12rpx;
+  padding: 16rpx;
+  margin-top: 14rpx;
+}
+
+.picker {
+  margin-top: 14rpx;
+  background: #eef6ff;
+  padding: 14rpx;
+  border-radius: 10rpx;
+}
+
+.btn {
+  margin-top: 16rpx;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #eef3f8;
+}
