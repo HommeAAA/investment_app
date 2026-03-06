@@ -1,9 +1,0 @@
-.page {
-  padding: 24rpx;
-}
-
-.line {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}

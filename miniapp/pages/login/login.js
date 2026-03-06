@@ -39,7 +39,7 @@ Page({
     try {
       const user = await loginAndLoadUser();
       this.setData({ user });
-      if (user && user.boundLegacy) {
+      if (user && user.uid) {
         wx.switchTab({ url: "/pages/portfolio/portfolio" });
       }
     } catch (error) {

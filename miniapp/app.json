@@ -4,21 +4,20 @@
     "pages/portfolio/portfolio",
     "pages/portfolio-edit/portfolio-edit",
     "pages/share/share",
-    "pages/logs/logs",
     "pages/profile/profile"
   ],
   "window": {
-    "navigationBarTitleText": "投资助手",
-    "navigationBarBackgroundColor": "#0f766e",
+    "navigationBarTitleText": "投资管家",
+    "navigationBarBackgroundColor": "#2563eb",
     "navigationBarTextStyle": "white",
-    "backgroundColor": "#f3f7fb",
+    "backgroundColor": "#f1f5f9",
     "backgroundTextStyle": "light"
   },
   "tabBar": {
-    "color": "#64748b",
-    "selectedColor": "#0f766e",
+    "color": "#94a3b8",
+    "selectedColor": "#2563eb",
     "backgroundColor": "#ffffff",
-    "borderStyle": "black",
+    "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/portfolio/portfolio",
@@ -31,10 +30,6 @@
       {
         "pagePath": "pages/share/share",
         "text": "共享"
-      },
-      {
-        "pagePath": "pages/logs/logs",
-        "text": "日志"
       },
       {
         "pagePath": "pages/profile/profile",

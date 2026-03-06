@@ -1,14 +1,80 @@
-<view class="page">
-  <view class="card">
-    <view class="title">账号信息</view>
-    <view class="sub">昵称：{{user.nickname || '--'}}</view>
-    <view class="sub">UID：{{user.uid || '--'}}</view>
-    <view class="sub">邀请码：{{user.inviteCode || '--'}}</view>
-    <view class="sub">已绑定旧账号：{{user.boundLegacy ? '是' : '否'}}</view>
+<view class="page profile-page">
+  <view class="profile-header fade-in">
+    <view class="avatar-wrap">
+      <view class="avatar-placeholder" wx:if="{{!user.avatarUrl}}">
+        <text>{{user.nickname ? user.nickname[0] : '👤'}}</text>
+      </view>
+      <image class="avatar" src="{{user.avatarUrl}}" mode="aspectFill" wx:else />
+    </view>
+    <view class="user-info">
+      <view class="nickname">{{user.nickname || '未登录'}}</view>
+      <view class="invite-code" wx:if="{{user.inviteCode}}">
+        <text class="invite-label">邀请码：</text>
+        <text class="invite-value">{{user.inviteCode}}</text>
+        <text class="copy-btn" bindtap="copyInviteCode">复制</text>
+      </view>
+    </view>
   </view>
 
-  <view class="card">
-    <button type="primary" bindtap="goBind">去绑定旧账号</button>
-    <button class="btn" bindtap="logout">退出登录</button>
+  <view class="card stats-card fade-in">
+    <view class="stats-grid">
+      <view class="stat-item">
+        <view class="stat-value">{{stats.holdings}}</view>
+        <view class="stat-label">持仓数</view>
+      </view>
+      <view class="stat-item">
+        <view class="stat-value">{{stats.sharedUsers}}</view>
+        <view class="stat-label">共享用户</view>
+      </view>
+      <view class="stat-item">
+        <view class="stat-value">{{stats.days}}</view>
+        <view class="stat-label">使用天数</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card menu-card fade-in">
+    <view class="menu-item" bindtap="goShare">
+      <view class="menu-icon">👥</view>
+      <view class="menu-content">
+        <view class="menu-title">共享管理</view>
+        <view class="menu-desc">管理持仓共享权限</view>
+      </view>
+      <view class="menu-arrow">›</view>
+    </view>
+
+    <view class="menu-item" bindtap="goInvite">
+      <view class="menu-icon">🎁</view>
+      <view class="menu-content">
+        <view class="menu-title">邀请好友</view>
+        <view class="menu-desc">邀请好友一起使用</view>
+      </view>
+      <view class="menu-arrow">›</view>
+    </view>
+
+    <view class="menu-item" bindtap="goFeedback">
+      <view class="menu-icon">💬</view>
+      <view class="menu-content">
+        <view class="menu-title">意见反馈</view>
+        <view class="menu-desc">帮助我们改进产品</view>
+      </view>
+      <view class="menu-arrow">›</view>
+    </view>
+
+    <view class="menu-item" bindtap="goAbout">
+      <view class="menu-icon">ℹ️</view>
+      <view class="menu-content">
+        <view class="menu-title">关于我们</view>
+        <view class="menu-desc">版本 {{version}}</view>
+      </view>
+      <view class="menu-arrow">›</view>
+    </view>
+  </view>
+
+  <view class="card actions-card fade-in">
+    <button class="btn btn-ghost logout-btn" bindtap="onLogout">
+      <text class="btn-icon">🚪</text>
+      <text>退出登录</text>
+    </button>
   </view>
 </view>

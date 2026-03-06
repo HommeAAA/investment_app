@@ -5,7 +5,7 @@ Page({
   data: {
     myInviteCode: "",
     inviteCodeInput: "",
-    permissionOptions: ["只读(read)", "可编辑(edit)"],
+    permissionOptions: ["仅查看", "可编辑"],
     permissionIndex: 0,
     invitedByMe: [],
     sharedToMe: [],
@@ -17,6 +17,20 @@ Page({
     if (!user) return;
     this.setData({ myInviteCode: user.inviteCode || "" });
     await this.loadShareList();
+  },
+
+  copyMyCode() {
+    const code = this.data.myInviteCode;
+    if (!code) {
+      wx.showToast({ title: "暂无邀请码", icon: "none" });
+      return;
+    }
+    wx.setClipboardData({
+      data: code,
+      success: () => {
+        wx.showToast({ title: "已复制邀请码", icon: "success" });
+      },
+    });
   },
 
   onInviteCodeInput(e) {
@@ -69,12 +83,21 @@ Page({
   async onRevoke(e) {
     const uid = e.currentTarget.dataset.uid;
     if (!uid) return;
-    try {
-      await callCore("share.revoke", { sharedWithUid: uid });
-      wx.showToast({ title: "已撤销", icon: "success" });
-      await this.loadShareList();
-    } catch (error) {
-      showError(error, "撤销失败");
-    }
+    
+    wx.showModal({
+      title: "确认撤销",
+      content: "确定要撤销该用户的共享权限吗？",
+      success: async (res) => {
+        if (res.confirm) {
+          try {
+            await callCore("share.revoke", { sharedWithUid: uid });
+            wx.showToast({ title: "已撤销", icon: "success" });
+            await this.loadShareList();
+          } catch (error) {
+            showError(error, "撤销失败");
+          }
+        }
+      },
+    });
   },
 });

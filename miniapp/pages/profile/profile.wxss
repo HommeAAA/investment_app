@@ -1,7 +1,165 @@
-.page {
+.profile-page {
+  padding-bottom: 120rpx;
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  padding: 40rpx 24rpx;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  margin: -24rpx -24rpx 24rpx;
+  color: #ffffff;
+}
+
+.avatar-wrap {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4rpx;
+  margin-right: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-light), var(--secondary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 48rpx;
+  font-weight: 600;
+}
+
+.user-info {
+  flex: 1;
+}
+
+.nickname {
+  font-size: 36rpx;
+  font-weight: 700;
+  margin-bottom: 8rpx;
+}
+
+.invite-code {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.invite-label {
+  font-size: 24rpx;
+  opacity: 0.8;
+}
+
+.invite-value {
+  font-size: 26rpx;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+.copy-btn {
+  font-size: 22rpx;
+  background: rgba(255, 255, 255, 0.3);
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+.stats-card {
+  padding: 32rpx;
+}
+
+.stats-grid {
+  display: flex;
+}
+
+.stat-item {
+  flex: 1;
+  text-align: center;
+}
+
+.stat-item:not(:last-child) {
+  border-right: 1rpx solid var(--border);
+}
+
+.stat-value {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 8rpx;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+}
+
+.menu-card {
+  padding: 0;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid var(--border);
+  transition: background 0.2s;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-item:active {
+  background: var(--bg-page);
+}
+
+.menu-icon {
+  font-size: 40rpx;
+  margin-right: 24rpx;
+}
+
+.menu-content {
+  flex: 1;
+}
+
+.menu-title {
+  font-size: 30rpx;
+  color: var(--text-primary);
+  font-weight: 500;
+  margin-bottom: 4rpx;
+}
+
+.menu-desc {
+  font-size: 24rpx;
+  color: var(--text-muted);
+}
+
+.menu-arrow {
+  font-size: 32rpx;
+  color: var(--text-muted);
+  font-weight: 300;
+}
+
+.actions-card {
   padding: 24rpx;
 }
 
-.btn {
-  margin-top: 16rpx;
+.logout-btn {
+  width: 100%;
+  border: 2rpx solid var(--danger);
+  color: var(--danger);
 }

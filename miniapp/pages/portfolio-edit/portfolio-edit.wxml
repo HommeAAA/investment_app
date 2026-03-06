@@ -1,14 +1,79 @@
-<view class="page">
-  <view class="card">
-    <view class="title">{{isEdit ? '编辑持仓' : '新增持仓'}}</view>
-    <input class="input" placeholder="投资人" value="{{form.investor}}" bindinput="onInvestorInput" />
-    <input class="input" placeholder="标的代码，如 AAPL / 600519" value="{{form.symbolCode}}" bindinput="onSymbolInput" />
-    <input class="input" placeholder="市场（可空：自动识别）" value="{{form.market}}" bindinput="onMarketInput" />
-    <input class="input" placeholder="渠道" value="{{form.channel}}" bindinput="onChannelInput" />
-    <input class="input" type="digit" placeholder="成本价" value="{{form.costPrice}}" bindinput="onCostInput" />
-    <input class="input" type="digit" placeholder="数量" value="{{form.quantity}}" bindinput="onQtyInput" />
+<view class="page edit-page">
+  <view class="card form-card fade-in">
+    <view class="form-header">
+      <view class="title">{{isEdit ? '编辑持仓' : '新增持仓'}}</view>
+      <view class="sub" wx:if="{{isEdit}}">修改后将自动保存</view>
+    </view>
 
-    <button type="primary" class="btn" bindtap="onSubmit" loading="{{loading}}">{{isEdit ? '保存修改' : '新增持仓'}}</button>
-    <button wx:if="{{isEdit}}" class="btn" bindtap="onDelete" loading="{{loadingDelete}}">删除记录</button>
+    <view class="form-body">
+      <view class="form-group">
+        <view class="form-label">投资人</view>
+        <input class="input" placeholder="请输入投资人姓名" value="{{form.investor}}" bindinput="onInvestorInput" />
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">标的代码</view>
+        <input class="input" placeholder="如 AAPL / 600519" value="{{form.symbolCode}}" bindinput="onSymbolInput" bindblur="onSymbolBlur" />
+        <view class="symbol-hint" wx:if="{{symbolHint}}">{{symbolHint}}</view>
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">市场</view>
+        <picker mode="selector" range="{{markets}}" value="{{marketIndex}}" bindchange="onMarketChange">
+          <view class="picker-input">
+            <text class="picker-value">{{markets[marketIndex]}}</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </view>
+
+      <view class="form-row">
+        <view class="form-group form-group-half">
+          <view class="form-label">成本价</view>
+          <input class="input" type="digit" placeholder="0.00" value="{{form.costPrice}}" bindinput="onCostPriceInput" />
+        </view>
+        <view class="form-group form-group-half">
+          <view class="form-label">数量</view>
+          <input class="input" type="digit" placeholder="0" value="{{form.quantity}}" bindinput="onQuantityInput" />
+        </view>
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">货币</view>
+        <picker mode="selector" range="{{currencies}}" value="{{currencyIndex}}" bindchange="onCurrencyChange">
+          <view class="picker-input">
+            <text class="picker-value">{{currencies[currencyIndex]}}</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">买入日期</view>
+        <picker mode="date" value="{{form.buyDate}}" bindchange="onDateChange">
+          <view class="picker-input">
+            <text class="picker-value">{{form.buyDate || '请选择日期'}}</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">备注</view>
+        <textarea class="textarea" placeholder="选填，可添加备注信息" value="{{form.note}}" bindinput="onNoteInput" maxlength="200" />
+      </view>
+    </view>
+
+    <view class="form-actions">
+      <button class="btn btn-primary" bindtap="onSubmit" loading="{{loading}}">
+        <text class="btn-icon">💾</text>
+        <text>{{isEdit ? '保存修改' : '新增持仓'}}</text>
+      </button>
+      
+      <button class="btn btn-danger" wx:if="{{isEdit}}" bindtap="onDelete" loading="{{loadingDelete}}">
+        <text class="btn-icon">🗑️</text>
+        <text>删除持仓</text>
+      </button>
+    </view>
   </view>
 </view>

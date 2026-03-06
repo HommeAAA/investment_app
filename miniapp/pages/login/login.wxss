@@ -1,21 +1,145 @@
-.page {
+.login-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-top: 80rpx;
+}
+
+.login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 48rpx;
+}
+
+.logo-wrap {
+  width: 120rpx;
+  height: 120rpx;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  border-radius: 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 16rpx 40rpx rgba(37, 99, 235, 0.3);
+  margin-bottom: 24rpx;
+}
+
+.logo {
+  font-size: 56rpx;
+}
+
+.app-name {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8rpx;
+}
+
+.app-desc {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+}
+
+.login-card {
+  padding: 40rpx;
+}
+
+.card-header {
+  margin-bottom: 32rpx;
+}
+
+.card-header .title {
+  margin-bottom: 8rpx;
+}
+
+.login-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+}
+
+.btn-icon {
+  font-size: 32rpx;
+  margin-right: 8rpx;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 32rpx 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1rpx;
+  background: var(--border);
+}
+
+.divider-text {
+  padding: 0 24rpx;
+  color: var(--text-muted);
+  font-size: 24rpx;
+}
+
+.bind-card {
+  padding: 40rpx;
+}
+
+.form-group {
+  margin-top: 24rpx;
+}
+
+.form-label {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  margin-bottom: 12rpx;
+  display: block;
+}
+
+.success-card {
+  padding: 40rpx;
+}
+
+.success-header {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.success-icon {
+  font-size: 48rpx;
+}
+
+.user-info {
+  background: var(--bg-page);
+  border-radius: var(--radius-md);
   padding: 24rpx;
+  margin-bottom: 24rpx;
 }
 
-.btn {
-  margin-top: 20rpx;
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12rpx 0;
 }
 
-.secondary {
-  background: #ffffff;
-  color: #0f766e;
-  border: 1rpx solid #0f766e;
+.info-row:not(:last-child) {
+  border-bottom: 1rpx solid var(--border);
 }
 
-.input {
-  background: #f8fafc;
-  border: 1rpx solid #dbe7f4;
-  border-radius: 12rpx;
-  padding: 16rpx;
-  margin-top: 14rpx;
+.info-label {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+}
+
+.info-value {
+  font-size: 28rpx;
+  color: var(--text-primary);
+  font-weight: 600;
 }

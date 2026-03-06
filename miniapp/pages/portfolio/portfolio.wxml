@@ -1,29 +1,89 @@
-<view class="page">
-  <view class="card">
-    <view class="title">资产总览</view>
-    <view class="sub">总成本：{{summary.totalCostText}}</view>
-    <view class="sub">当前市值：{{summary.totalMvText}}</view>
-    <view class="sub">总收益：{{summary.totalProfitText}}</view>
-    <button size="mini" bindtap="refreshAll" loading="{{loading}}">刷新</button>
+<view class="page portfolio-page">
+  <view class="summary-card card fade-in">
+    <view class="summary-header">
+      <view class="summary-title">资产总览</view>
+      <button class="refresh-btn" bindtap="refreshAll" loading="{{loading}}">
+        <text class="refresh-icon">🔄</text>
+      </button>
+    </view>
+    
+    <view class="summary-grid">
+      <view class="summary-item">
+        <view class="summary-label">总成本</view>
+        <view class="summary-value">{{summary.totalCostText}}</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">当前市值</view>
+        <view class="summary-value">{{summary.totalMvText}}</view>
+      </view>
+      <view class="summary-item summary-highlight">
+        <view class="summary-label">总收益</view>
+        <view class="summary-value {{summary.profitClass}}">{{summary.totalProfitText}}</view>
+      </view>
+    </view>
   </view>
 
-  <view class="card" wx:if="{{rows.length === 0}}">
-    <view class="sub">暂无数据，请到“新增”页添加</view>
+  <view class="empty-state fade-in" wx:if="{{rows.length === 0}}">
+    <view class="empty-icon">📊</view>
+    <view class="empty-text">暂无持仓数据</view>
+    <view class="empty-hint">请到"新增"页添加您的第一笔投资</view>
   </view>
 
   <block wx:for="{{rows}}" wx:key="_id">
-    <view class="card">
-      <view class="line">
-        <text class="name">{{item.symbolCode}} {{item.symbolName}}</text>
-        <text class="owner">{{item.ownerLabel}}</text>
+    <view class="holding-card card fade-in" bindtap="goEdit" data-id="{{item._id}}">
+      <view class="holding-header">
+        <view class="holding-symbol">
+          <text class="symbol-code">{{item.symbolCode}}</text>
+          <text class="symbol-name">{{item.symbolName}}</text>
+        </view>
+        <view class="holding-badge {{item.profitClass}}">
+          {{item.profitPercent}}
+        </view>
       </view>
-      <view class="sub">投资人：{{item.investor}} | 市场：{{item.market}}</view>
-      <view class="sub">成本：{{item.costPrice}} x {{item.quantity}}</view>
-      <view class="sub">现价：{{item.currentPrice}} {{item.currency}} | 市值：{{item.currentMv}}</view>
-      <view class="sub">收益：{{item.profit}}</view>
-      <view class="actions">
-        <button size="mini" bindtap="goEdit" data-id="{{item._id}}" wx:if="{{item.editable}}">编辑</button>
-        <text class="sub" wx:else>只读</text>
+      
+      <view class="holding-details">
+        <view class="detail-row">
+          <view class="detail-item">
+            <text class="detail-label">投资人</text>
+            <text class="detail-value">{{item.investor}}</text>
+          </view>
+          <view class="detail-item">
+            <text class="detail-label">市场</text>
+            <text class="detail-value">{{item.market}}</text>
+          </view>
+        </view>
+        
+        <view class="detail-row">
+          <view class="detail-item">
+            <text class="detail-label">成本价</text>
+            <text class="detail-value">{{item.costPrice}}</text>
+          </view>
+          <view class="detail-item">
+            <text class="detail-label">数量</text>
+            <text class="detail-value">{{item.quantity}}</text>
+          </view>
+        </view>
+        
+        <view class="detail-row">
+          <view class="detail-item">
+            <text class="detail-label">现价</text>
+            <text class="detail-value">{{item.currentPrice}} {{item.currency}}</text>
+          </view>
+          <view class="detail-item">
+            <text class="detail-label">市值</text>
+            <text class="detail-value">{{item.currentMv}}</text>
+          </view>
+        </view>
+      </view>
+      
+      <view class="holding-footer">
+        <view class="profit-row">
+          <text class="profit-label">收益</text>
+          <text class="profit-value {{item.profitClass}}">{{item.profit}}</text>
+        </view>
+        <view class="owner-tag" wx:if="{{!item.editable}}">
+          <text class="owner-tag-text">只读</text>
+        </view>
       </view>
     </view>
   </block>

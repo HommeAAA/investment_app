@@ -38,3 +38,14 @@ miniapp/miniprogram_npm/
 # Miniapp sensitive files
 miniapp/project.config.json
 miniapp/project.private.config.json
+project.config.json
+project.private.config.json
+
+# Database
+testApp.db
+
+# Migration (already deleted)
+cloudbase_migration_out/
+tests/
+scripts/migrate_to_cloudbase.py
+testApp.py

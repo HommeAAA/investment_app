@@ -1,23 +1,216 @@
-.page {
-  padding: 24rpx;
+.portfolio-page {
+  padding-bottom: 120rpx;
 }
 
-.line {
+.summary-card {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: #ffffff;
+  padding: 40rpx;
+}
+
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32rpx;
+}
+
+.summary-title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.refresh-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  width: 64rpx;
+  height: 64rpx;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.refresh-icon {
+  font-size: 28rpx;
+}
+
+.summary-grid {
+  display: flex;
+  gap: 24rpx;
+}
+
+.summary-item {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-md);
+  padding: 24rpx 16rpx;
+  text-align: center;
+}
+
+.summary-highlight {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.summary-label {
+  font-size: 22rpx;
+  opacity: 0.9;
+  margin-bottom: 8rpx;
+}
+
+.summary-value {
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.empty-state {
+  padding: 100rpx 32rpx;
+}
+
+.empty-icon {
+  font-size: 100rpx;
+  margin-bottom: 24rpx;
+}
+
+.empty-text {
+  font-size: 32rpx;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.empty-hint {
+  font-size: 26rpx;
+  color: var(--text-muted);
+}
+
+.holding-card {
+  padding: 32rpx;
+}
+
+.holding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24rpx;
+}
+
+.holding-symbol {
+  display: flex;
+  flex-direction: column;
+}
+
+.symbol-code {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.symbol-name {
+  font-size: 24rpx;
+  color: var(--text-secondary);
+  margin-top: 4rpx;
+}
+
+.holding-badge {
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.holding-badge.profit {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.holding-badge.loss {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+.holding-badge.neutral {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-muted);
+}
+
+.holding-details {
+  background: var(--bg-page);
+  border-radius: var(--radius-md);
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.detail-row {
+  display: flex;
+  gap: 24rpx;
+  margin-bottom: 12rpx;
+}
+
+.detail-row:last-child {
+  margin-bottom: 0;
+}
+
+.detail-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-label {
+  font-size: 22rpx;
+  color: var(--text-muted);
+  margin-bottom: 4rpx;
+}
+
+.detail-value {
+  font-size: 26rpx;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.holding-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.name {
-  font-size: 30rpx;
-  font-weight: 600;
+.profit-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
 }
 
-.owner {
+.profit-label {
   font-size: 24rpx;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
-.actions {
-  margin-top: 12rpx;
+.profit-value {
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.profit-value.profit {
+  color: var(--success);
+}
+
+.profit-value.loss {
+  color: var(--danger);
+}
+
+.profit-value.neutral {
+  color: var(--text-muted);
+}
+
+.owner-tag {
+  background: var(--bg-page);
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+}
+
+.owner-tag-text {
+  font-size: 22rpx;
+  color: var(--text-muted);
 }

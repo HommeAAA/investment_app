@@ -6,6 +6,19 @@ function toFixed(value, digits = 2) {
   return Number.isFinite(n) ? n.toFixed(digits) : "0.00";
 }
 
+function getProfitClass(value) {
+  if (value > 0) return "profit";
+  if (value < 0) return "loss";
+  return "neutral";
+}
+
+function formatProfitPercent(cost, mv) {
+  if (cost <= 0) return "0.00%";
+  const percent = ((mv - cost) / cost) * 100;
+  const sign = percent >= 0 ? "+" : "";
+  return `${sign}${percent.toFixed(2)}%`;
+}
+
 Page({
   data: {
     loading: false,
@@ -14,6 +27,7 @@ Page({
       totalCostText: "0.00",
       totalMvText: "0.00",
       totalProfitText: "0.00",
+      profitClass: "neutral",
     },
   },
 
@@ -53,6 +67,8 @@ Page({
         totalCost += cost;
         totalMv += mv;
 
+        const profitValue = mv - cost;
+
         return {
           ...row,
           ownerLabel: row.ownerUid === user.uid ? "我" : "共享",
@@ -60,16 +76,21 @@ Page({
           currentPrice: toFixed(quote.price, 4),
           currency: quote.currency || "USD",
           currentMv: toFixed(mv, 2),
-          profit: toFixed(mv - cost, 2),
+          profit: toFixed(profitValue, 2),
+          profitClass: getProfitClass(profitValue),
+          profitPercent: formatProfitPercent(cost, mv),
         };
       });
+
+      const totalProfit = totalMv - totalCost;
 
       this.setData({
         rows: viewRows,
         summary: {
           totalCostText: toFixed(totalCost, 2),
           totalMvText: toFixed(totalMv, 2),
-          totalProfitText: toFixed(totalMv - totalCost, 2),
+          totalProfitText: toFixed(totalProfit, 2),
+          profitClass: getProfitClass(totalProfit),
         },
       });
     } catch (error) {
