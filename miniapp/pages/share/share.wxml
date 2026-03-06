@@ -1,0 +1,40 @@
+<view class="page">
+  <view class="card">
+    <view class="title">我的邀请码</view>
+    <view class="code">{{myInviteCode || '--'}}</view>
+  </view>
+
+  <view class="card">
+    <view class="title">邀请共享</view>
+    <input class="input" placeholder="输入对方邀请码" value="{{inviteCodeInput}}" bindinput="onInviteCodeInput" />
+    <picker mode="selector" range="{{permissionOptions}}" bindchange="onPermissionChange" value="{{permissionIndex}}">
+      <view class="picker">权限：{{permissionOptions[permissionIndex]}}</view>
+    </picker>
+    <button type="primary" class="btn" bindtap="onInvite" loading="{{loadingInvite}}">发起共享</button>
+  </view>
+
+  <view class="card">
+    <view class="title">我邀请的人</view>
+    <view wx:if="{{invitedByMe.length===0}}" class="sub">暂无</view>
+    <block wx:for="{{invitedByMe}}" wx:key="_id">
+      <view class="row">
+        <view>
+          <view>{{item.targetUser ? item.targetUser.nickname : item.sharedWithUid}}</view>
+          <view class="sub">权限：{{item.permission}}</view>
+        </view>
+        <button size="mini" bindtap="onRevoke" data-uid="{{item.sharedWithUid}}">撤销</button>
+      </view>
+    </block>
+  </view>
+
+  <view class="card">
+    <view class="title">共享给我的人</view>
+    <view wx:if="{{sharedToMe.length===0}}" class="sub">暂无</view>
+    <block wx:for="{{sharedToMe}}" wx:key="_id">
+      <view class="row">
+        <view>{{item.ownerUser ? item.ownerUser.nickname : item.ownerUid}}</view>
+        <view class="sub">权限：{{item.permission}}</view>
+      </view>
+    </block>
+  </view>
+</view>

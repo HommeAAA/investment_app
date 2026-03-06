@@ -1,0 +1,30 @@
+<view class="page">
+  <view class="card">
+    <view class="title">资产总览</view>
+    <view class="sub">总成本：{{summary.totalCostText}}</view>
+    <view class="sub">当前市值：{{summary.totalMvText}}</view>
+    <view class="sub">总收益：{{summary.totalProfitText}}</view>
+    <button size="mini" bindtap="refreshAll" loading="{{loading}}">刷新</button>
+  </view>
+
+  <view class="card" wx:if="{{rows.length === 0}}">
+    <view class="sub">暂无数据，请到“新增”页添加</view>
+  </view>
+
+  <block wx:for="{{rows}}" wx:key="_id">
+    <view class="card">
+      <view class="line">
+        <text class="name">{{item.symbolCode}} {{item.symbolName}}</text>
+        <text class="owner">{{item.ownerLabel}}</text>
+      </view>
+      <view class="sub">投资人：{{item.investor}} | 市场：{{item.market}}</view>
+      <view class="sub">成本：{{item.costPrice}} x {{item.quantity}}</view>
+      <view class="sub">现价：{{item.currentPrice}} {{item.currency}} | 市值：{{item.currentMv}}</view>
+      <view class="sub">收益：{{item.profit}}</view>
+      <view class="actions">
+        <button size="mini" bindtap="goEdit" data-id="{{item._id}}" wx:if="{{item.editable}}">编辑</button>
+        <text class="sub" wx:else>只读</text>
+      </view>
+    </view>
+  </block>
+</view>

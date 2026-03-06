@@ -1,0 +1,14 @@
+<view class="page">
+  <view class="card">
+    <view class="title">{{isEdit ? '编辑持仓' : '新增持仓'}}</view>
+    <input class="input" placeholder="投资人" value="{{form.investor}}" bindinput="onInvestorInput" />
+    <input class="input" placeholder="标的代码，如 AAPL / 600519" value="{{form.symbolCode}}" bindinput="onSymbolInput" />
+    <input class="input" placeholder="市场（可空：自动识别）" value="{{form.market}}" bindinput="onMarketInput" />
+    <input class="input" placeholder="渠道" value="{{form.channel}}" bindinput="onChannelInput" />
+    <input class="input" type="digit" placeholder="成本价" value="{{form.costPrice}}" bindinput="onCostInput" />
+    <input class="input" type="digit" placeholder="数量" value="{{form.quantity}}" bindinput="onQtyInput" />
+
+    <button type="primary" class="btn" bindtap="onSubmit" loading="{{loading}}">{{isEdit ? '保存修改' : '新增持仓'}}</button>
+    <button wx:if="{{isEdit}}" class="btn" bindtap="onDelete" loading="{{loadingDelete}}">删除记录</button>
+  </view>
+</view>

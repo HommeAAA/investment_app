@@ -1,0 +1,23 @@
+.page {
+  padding: 24rpx;
+}
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.name {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.owner {
+  font-size: 24rpx;
+  color: #64748b;
+}
+
+.actions {
+  margin-top: 12rpx;
+}

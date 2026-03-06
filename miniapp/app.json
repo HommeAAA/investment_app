@@ -1,0 +1,47 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/portfolio/portfolio",
+    "pages/portfolio-edit/portfolio-edit",
+    "pages/share/share",
+    "pages/logs/logs",
+    "pages/profile/profile"
+  ],
+  "window": {
+    "navigationBarTitleText": "投资助手",
+    "navigationBarBackgroundColor": "#0f766e",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f3f7fb",
+    "backgroundTextStyle": "light"
+  },
+  "tabBar": {
+    "color": "#64748b",
+    "selectedColor": "#0f766e",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/portfolio/portfolio",
+        "text": "资产"
+      },
+      {
+        "pagePath": "pages/portfolio-edit/portfolio-edit",
+        "text": "新增"
+      },
+      {
+        "pagePath": "pages/share/share",
+        "text": "共享"
+      },
+      {
+        "pagePath": "pages/logs/logs",
+        "text": "日志"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

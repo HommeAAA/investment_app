@@ -1,0 +1,14 @@
+<view class="page">
+  <view class="card">
+    <view class="title">账号信息</view>
+    <view class="sub">昵称：{{user.nickname || '--'}}</view>
+    <view class="sub">UID：{{user.uid || '--'}}</view>
+    <view class="sub">邀请码：{{user.inviteCode || '--'}}</view>
+    <view class="sub">已绑定旧账号：{{user.boundLegacy ? '是' : '否'}}</view>
+  </view>
+
+  <view class="card">
+    <button type="primary" bindtap="goBind">去绑定旧账号</button>
+    <button class="btn" bindtap="logout">退出登录</button>
+  </view>
+</view>
