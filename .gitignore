@@ -30,3 +30,7 @@ scripts/start_tunnel.sh
 
 # OS
 .DS_Store
+
+# Miniapp sensitive files
+miniapp/project.config.json
+miniapp/project.private.config.json
