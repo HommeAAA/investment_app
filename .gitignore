@@ -40,6 +40,8 @@ miniapp/project.config.json
 miniapp/project.private.config.json
 project.config.json
 project.private.config.json
+# Keep template files
+!miniapp/project.config.json.example
 
 # Database
 testApp.db
